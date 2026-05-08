@@ -1,21 +1,16 @@
 // Service Worker for The House of Humanity
 // Provides offline functionality and caching for better performance
 
-const CACHE_NAME = 'thoh-v1.2';
-const urlsToCache = [
+const CACHE_NAME = 'thoh-v1.3';
+const CORE_ASSETS = [
     '/',
     '/index.html',
-    '/who-we-are.html',
-    '/meet-the-founder.html',
-    '/donate-now.html',
-    '/contact-us.html',
+    '/404.html',
     '/styles.css',
     '/script.js',
-    '/critical.css',
-    '/images/The House of Humanity-logo3.jpg',
-    '/images/HouseofHumanityLogo2.png',
+    '/images/THOHlogo-320.webp',
+    '/images/THOHlogo.png',
     '/site.webmanifest',
-    '/favicon.ico'
 ];
 
 // Install event - cache resources
@@ -23,29 +18,50 @@ self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => {
-                console.log('Opened cache');
-                return cache.addAll(urlsToCache);
+                return cache.addAll(CORE_ASSETS);
             })
+            .then(() => self.skipWaiting())
     );
 });
 
-// Fetch event - serve from cache with network fallback
+// Fetch event - prefer fresh HTML, cache-first for same-origin static assets
 self.addEventListener('fetch', event => {
+    if (event.request.method !== 'GET') {
+        return;
+    }
+
+    const requestUrl = new URL(event.request.url);
+    if (requestUrl.origin !== self.location.origin) {
+        return;
+    }
+
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            fetch(event.request)
+                .then(response => {
+                    const responseToCache = response.clone();
+                    caches.open(CACHE_NAME).then(cache => {
+                        cache.put(event.request, responseToCache);
+                    });
+                    return response;
+                })
+                .catch(() => caches.match(event.request).then(response => response || caches.match('/404.html')))
+        );
+        return;
+    }
+
     event.respondWith(
         caches.match(event.request)
             .then(response => {
-                // Return cached version or fetch from network
                 if (response) {
                     return response;
                 }
 
                 return fetch(event.request).then(response => {
-                    // Check if valid response
                     if (!response || response.status !== 200 || response.type !== 'basic') {
                         return response;
                     }
 
-                    // Clone the response
                     const responseToCache = response.clone();
 
                     caches.open(CACHE_NAME)
@@ -66,11 +82,10 @@ self.addEventListener('activate', event => {
             return Promise.all(
                 cacheNames.map(cacheName => {
                     if (cacheName !== CACHE_NAME) {
-                        console.log('Deleting old cache:', cacheName);
                         return caches.delete(cacheName);
                     }
                 })
             );
-        })
+        }).then(() => self.clients.claim())
     );
 });

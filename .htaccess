@@ -114,13 +114,10 @@ FileETag None
 # Remove server signature (handled at server level; not allowed in .htaccess)
 # ServerTokens Prod
 
-# Force HTTPS (uncomment when SSL is set up)
-# RewriteCond %{HTTPS} off
-# RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
-
-# Remove www (optional - choose one)
-# RewriteCond %{HTTP_HOST} ^www\.(.*)$ [NC]
-# RewriteRule ^(.*)$ https://%1/$1 [R=301,L]
+# Canonical host: force HTTPS and www.thehouseofhumanity.org
+RewriteCond %{HTTPS} off [OR]
+RewriteCond %{HTTP_HOST} !^www\.thehouseofhumanity\.org$ [NC]
+RewriteRule ^ https://www.thehouseofhumanity.org%{REQUEST_URI} [L,R=301]
 
 # Custom error pages
 ErrorDocument 404 /404.html

@@ -66,8 +66,17 @@
   justify-content: center;
   align-items: center;
   z-index: 9999;
-  cursor: pointer;
   transition: opacity 0.3s;
+}
+.event-image-modal.is-open {
+    display: flex;
+}
+.event-image-modal-content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
 }
 .event-image-modal img {
   max-width: 90vw;
@@ -75,6 +84,27 @@
   border-radius: 18px;
   box-shadow: 0 8px 32px rgba(2,201,170,0.18);
   background: #fff;
+}
+.event-image-modal-close {
+    align-self: flex-end;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.6rem 1rem;
+    background: #fff;
+    color: #111;
+    font-weight: 700;
+    cursor: pointer;
+}
+.event-image-trigger {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+}
+.event-image-trigger:focus-visible,
+.event-image-modal-close:focus-visible {
+    outline: 3px solid #02c9aa;
+    outline-offset: 4px;
 }
 /* Single Event Section Styling */
 .events-section {
@@ -123,6 +153,10 @@
 .event-image-clickable {
     width: 25% !important;
     cursor: pointer;
+}
+.event-image-hint {
+    font-size: 0.9rem !important;
+    color: #666 !important;
 }
 .event-card h3 {
   color: #02c9aa;
@@ -1874,6 +1908,25 @@ img {
 .footer-main a { color:#fff; text-decoration:none; }
 .footer-main ul { list-style:none; padding:0; margin:0 !important; color:#fff; display:flex; flex-direction:column; gap:0; }
 .footer-main li { margin-bottom:0; }
+.footer-social-grid {
+    width: auto;
+    max-width: 120px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 12px;
+    align-items: center;
+    justify-items: center;
+    margin: 10px auto 0;
+}
+.footer-social-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    background: #fff;
+    padding: 4px;
+    display: block;
+}
 .footer-sep { margin:12px auto 0 auto; max-width:60%; border:0; border-top:2px solid #009e86; }
 .footer-bottom { text-align:center; padding:8px 0 0 0; color:#fff; background:#02c9aa; font-size:1rem; }
 .footer-indent { margin-left:65px; display:inline-block; }
@@ -3090,11 +3143,17 @@ a:focus {
   max-width: 420px;
 }
 .volunteer-video, .volunteer-img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
   border-radius: 18px;
   box-shadow: 0 2px 16px rgba(2,201,170,0.08);
 }
 .volunteer-info {
   flex: 2;
+    min-width: 280px;
+    max-width: 560px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3102,6 +3161,19 @@ a:focus {
   text-align: center;
   margin-left: auto;
   margin-right: auto;
+}
+.volunteer-title {
+    color: #02c9aa;
+    font-size: 2.2rem;
+    font-weight: 800;
+    margin-bottom: 1rem;
+}
+.volunteer-desc {
+    color: #444;
+    font-size: 1.08rem;
+    line-height: 1.75;
+    margin-bottom: 1.5rem;
+    max-width: 44ch;
 }
 
 /* Make Your Donation Section */
@@ -3229,6 +3301,15 @@ a:focus {
 .payment-option-img { width:160px; height:auto; margin-bottom:18px; border-radius:8px; }
 .payment-option-img--small { width:120px; }
 .payment-option-note { color:#888; font-size:1.05rem; margin-top:8px; }
+.credit-link {
+    margin-top: 1rem;
+    color: #555;
+    font-size: 0.98rem;
+    line-height: 1.6;
+}
+.credit-link--inactive {
+    font-style: italic;
+}
 
 /* Contact Us Section */
 .contact-section {
@@ -3278,6 +3359,13 @@ a:focus {
     margin-bottom: 1.2rem;
     background: #fff;
     transition: border-color 0.2s;
+}
+.form-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #222;
+    font-weight: 700;
+    text-align: left;
 }
 .contact-form input:focus,
 .contact-form select:focus,
@@ -3334,3 +3422,11 @@ a:focus {
 .contact-form-notification.success { background: rgba(46, 125, 50, 0.95); }
 .contact-form-notification.error   { background: rgba(198, 40, 40, 0.95); }
 .contact-form-notification.info    { background: rgba(25, 118, 210, 0.95); }
+.logo-title {
+    color: #02c9aa;
+    font-size: 2rem;
+    font-weight: 800;
+    margin: 0;
+    text-shadow: 1px 2px 8px #6c2eb722;
+    letter-spacing: 1px;
+}

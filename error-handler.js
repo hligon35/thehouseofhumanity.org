@@ -31,7 +31,7 @@
     function preloadCriticalResources() {
         const criticalResources = [
             { href: 'styles.css', as: 'style' },
-            { href: 'images/The House of Humanity-logo3.jpg', as: 'image' }
+            { href: 'images/THOHlogo-320.webp', as: 'image' }
         ];
         
         criticalResources.forEach(resource => {

@@ -231,6 +231,10 @@ function initNavigation() {
                 const elementPosition = target.getBoundingClientRect().top;
                 const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
 
+                if (!target.hasAttribute('tabindex')) {
+                    target.setAttribute('tabindex', '-1');
+                }
+
                 window.scrollTo({
                     top: offsetPosition,
                     behavior: 'smooth'
@@ -301,6 +305,7 @@ function initForms() {
                 const data = Object.fromEntries(new FormData(form));
         if (!validateContactForm(data, form)) {
                     e.preventDefault();
+                updateFormMessage(form, 'Please fill the required fields: Name, Email, and Topic.', 'error');
             showNotification('Please fill the required fields: Name, Email, and Topic.', 'error');
                     return;
                 }
@@ -336,21 +341,26 @@ function initForms() {
                             const isOK = /(ok|success)/i.test(text);
                             const isError = /error/i.test(text);
                             if (isOK) {
+                                updateFormMessage(form, 'Thanks — we got your message!', 'success');
                                 showNotification('Thanks — we got your message!', 'success');
                                 form.reset();
                             } else if (isError) {
+                                updateFormMessage(form, 'There was an issue sending your message. Please try again.', 'error');
                                 showNotification('There was an issue sending your message. Please try again.', 'error');
                             } else if (text) {
                                 // Unknown non-empty response: assume success to avoid blocking users
+                                updateFormMessage(form, 'Thanks — we got your message!', 'success');
                                 showNotification('Thanks — we got your message!', 'success');
                                 form.reset();
                             } else {
                                 // Empty but loaded – assume success for Apps Script minimal responses
+                                updateFormMessage(form, 'Thanks — we got your message!', 'success');
                                 showNotification('Thanks — we got your message!', 'success');
                                 form.reset();
                             }
                         } catch (_) {
                             // Cross-origin read may fail; assume success on load
+                            updateFormMessage(form, 'Thanks — we got your message!', 'success');
                             showNotification('Thanks — we got your message!', 'success');
                             form.reset();
                         } finally {
@@ -374,6 +384,7 @@ function initForms() {
                             submitBtn.textContent = submitBtn.dataset.originalText || 'Send';
                             submitBtn.disabled = false;
                         }
+                        updateFormMessage(form, 'Thanks — if you do not hear from us shortly, please email info@thehouseofhumanity.org.', 'info');
                         showNotification('Thanks — if you don\'t hear from us shortly, please email info@thehouseofhumanity.org.', 'info');
                     }, 5000);
                 }
@@ -398,6 +409,23 @@ function initForms() {
     newsletterForms.forEach(form => {
         form.addEventListener('submit', handleNewsletterSubmit);
     });
+}
+
+function updateFormMessage(form, message, type = 'info') {
+    const messageRegion = form?.querySelector('#formMessage');
+    if (!messageRegion) {
+        return;
+    }
+
+    const colors = {
+        success: 'var(--success-color)',
+        error: 'var(--danger-color)',
+        info: 'var(--info-color)'
+    };
+
+    messageRegion.textContent = message;
+    messageRegion.style.display = 'block';
+    messageRegion.style.color = colors[type] || colors.info;
 }
 
 // Contact form submission
@@ -938,6 +966,9 @@ function showNotification(message, type = 'info') {
     // Create new notification
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
+    notification.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    notification.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+    notification.setAttribute('aria-atomic', 'true');
     notification.innerHTML = `
         <div class="notification-content">
             <span class="notification-message">${message}</span>

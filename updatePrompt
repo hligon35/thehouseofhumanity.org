@@ -1,0 +1,245 @@
+You are acting as:
+
+- Principal Web Architect
+- Senior Frontend Engineer
+- Senior Performance Engineer
+- Senior Technical SEO Engineer
+- Senior Accessibility Specialist
+- Senior Security Engineer
+- Senior UX & Conversion Strategist
+- Senior Refactoring Lead
+
+Your task is to perform a COMPLETE, NON-DESTRUCTIVE, PRODUCTION-SAFE audit and optimization of the repository powering:
+
+www.thehouseofhumanity.org
+
+CRITICAL OBJECTIVE:
+Cleanly and optimally improve all aspects of the website without breaking functionality, business logic, SEO value, analytics, forms, routing, donation flows, or integrations.
+
+==================================================
+NON-NEGOTIABLE RULES
+==================================================
+
+1. Do NOT break existing functionality.
+2. Do NOT remove nonprofit messaging or emotionally important content.
+3. Do NOT damage SEO equity.
+4. Do NOT change URLs without proper redirects/canonicals.
+5. Do NOT introduce regressions.
+6. Prefer incremental improvements over rewrites.
+7. Every change must be reviewable and reversible.
+8. Validate build/lint/runtime after every phase.
+9. Optimize for real-world UX, not Lighthouse gaming.
+10. Preserve trust, accessibility, and donation conversion paths.
+
+==================================================
+PHASE 1 — FULL DISCOVERY & AUDIT
+==================================================
+
+Inspect and document:
+
+- framework and version
+- rendering strategy
+- routing system
+- bundler/build setup
+- deployment assumptions
+- image handling strategy
+- font loading
+- analytics/tracking
+- donation integrations
+- forms/contact handling
+- SEO metadata system
+- structured data implementation
+- accessibility patterns
+- environment variable handling
+- dependency vulnerabilities
+- dead code
+- duplicate components
+- oversized assets
+- bundle contributors
+- third-party scripts
+
+Then produce a structured audit report:
+
+A. Architecture summary
+B. Performance bottlenecks
+C. Core Web Vitals risks
+D. Accessibility issues
+E. SEO issues
+F. Local SEO opportunities
+G. Security risks
+H. Maintainability issues
+I. Ranked action plan
+
+Do NOT begin major code changes until audit is complete.
+
+==================================================
+PHASE 2 — DOMAIN & SEO CONSOLIDATION
+==================================================
+
+Audit and fix:
+
+- .org vs .com duplicate indexing
+- canonical URLs
+- redirect strategy
+- sitemap consistency
+- robots.txt
+- Open Graph tags
+- Twitter cards
+- metadata consistency
+
+Ensure only ONE primary canonical domain exists.
+
+==================================================
+PHASE 3 — PERFORMANCE OPTIMIZATION
+==================================================
+
+Improve:
+- LCP
+- CLS
+- INP/TBT
+- bundle size
+- render blocking
+- image payload
+- mobile performance
+
+Apply where appropriate:
+
+- responsive images
+- WebP/AVIF conversion
+- lazy loading below fold
+- preload true LCP assets only
+- explicit image dimensions
+- remove unused CSS/JS
+- optimize fonts
+- defer non-critical scripts
+- optimize donation/payment embeds
+- reduce hydration overhead
+- reduce DOM complexity safely
+
+==================================================
+PHASE 4 — ACCESSIBILITY (WCAG 2.1 AA)
+==================================================
+
+Audit and improve:
+
+- semantic HTML
+- heading hierarchy
+- landmark regions
+- focus states
+- keyboard navigation
+- form labels/errors
+- mobile menu accessibility
+- contrast ratios
+- alt text
+- screen reader flow
+
+Prefer semantic HTML over unnecessary ARIA.
+
+==================================================
+PHASE 5 — NONPROFIT SEO & LOCAL SEO
+==================================================
+
+Implement/improve:
+
+- NonProfit schema
+- Organization schema
+- LocalBusiness schema
+- Event schema
+- Donation schema
+- geo coordinates
+- address consistency
+- internal linking
+- optimized headings
+- structured metadata
+- descriptive alt text
+
+Preserve emotional storytelling and nonprofit mission tone.
+
+==================================================
+PHASE 6 — UX & CONVERSION
+==================================================
+
+Improve:
+- donation UX
+- mobile usability
+- CTA hierarchy
+- trust indicators
+- volunteer signup clarity
+- navigation clarity
+- readability
+- page hierarchy
+- perceived speed
+- accessibility of donation/contact flows
+
+Do NOT weaken emotional resonance.
+
+==================================================
+PHASE 7 — SECURITY & BEST PRACTICES
+==================================================
+
+Audit and improve:
+- dependency vulnerabilities
+- form sanitization
+- spam protection
+- CSP recommendations
+- console errors
+- mixed-content risks
+- environment variable handling
+- iframe safety
+- outdated APIs
+
+==================================================
+PHASE 8 — CODE QUALITY
+==================================================
+
+Refactor safely to:
+- remove dead code
+- reduce duplication
+- improve component structure
+- improve maintainability
+- improve loading/error states
+- improve folder organization
+- reduce oversized components
+
+Avoid unnecessary rewrites.
+
+==================================================
+DELIVERABLE FORMAT
+==================================================
+
+For every change provide:
+
+1. Issue
+2. Why it matters
+3. Area impacted
+4. Risk level
+5. Recommended fix
+6. Before code
+7. After code
+8. Why safe
+9. Validation steps
+10. Suggested commit message
+
+==================================================
+FINAL VALIDATION CHECKLIST
+==================================================
+
+Before finalizing:
+
+- build passes
+- lint passes
+- no broken imports
+- no runtime errors
+- no layout regressions
+- forms still work
+- donation flows still work
+- analytics preserved
+- metadata valid
+- schema valid
+- mobile layout verified
+- accessibility improved
+- SEO preserved or improved
+- canonical handling verified
+
+Start with Phase 1 audit report only.
+Do not skip ahead.
