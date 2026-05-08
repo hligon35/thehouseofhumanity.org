@@ -16,14 +16,24 @@ function doPost(e) {
       return text_('OK');
     }
 
-    // Gather fields
-    const name = (p.Name || '').trim();
-    const email = (p.Email || '').trim();
-    const phone = (p.Phone || '').trim();
-    const topic = (p.Topic || '').trim();
-    const message = (p.Message || '').trim();
-    const pageURL = (p.PageURL || '').trim();
-    const subjectIn = (p.Subject || '').trim();
+    // Gather + clamp fields (basic hygiene; still validate downstream)
+    const clean = (v, maxLen) => String(v || '')
+      .replace(/[\u0000-\u001F\u007F]/g, '')
+      .trim()
+      .slice(0, maxLen);
+
+    const name = clean(p.Name, 120);
+    const email = clean(p.Email, 254);
+    const phone = clean(p.Phone, 40);
+    const topic = clean(p.Topic, 120);
+    const message = clean(p.Message, 2000);
+    const pageURL = clean(p.PageURL, 500);
+    const subjectIn = clean(p.Subject, 200);
+
+    // Lightweight rate limiting (best-effort). If throttled, silently succeed.
+    if (!rateLimitOk_({ email })) {
+      return text_('OK');
+    }
 
     const subject = subjectIn || `New Contact Form: ${topic || 'General Inquiry'}`;
 
@@ -62,6 +72,26 @@ function doPost(e) {
 
 function doGet() {
   return text_('OK');
+}
+
+function rateLimitOk_({ email }) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const day = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd');
+    const key = `rl_${day}_${(email || 'anon').toLowerCase()}`;
+    const current = parseInt(cache.get(key) || '0', 10) || 0;
+
+    // Allow a small number of submissions per 10 minutes per email.
+    // Note: Apps Script doesn't expose client IP in Web Apps.
+    const limit = 5;
+    if (current >= limit) return false;
+
+    cache.put(key, String(current + 1), 10 * 60);
+    return true;
+  } catch (e) {
+    // If cache is unavailable, do not block legitimate users.
+    return true;
+  }
 }
 
 function buildHtmlEmail_({ name, email, phone, topic, message, pageURL }) {

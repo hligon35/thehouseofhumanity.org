@@ -1644,7 +1644,7 @@ img {
     .nav-flex { gap: var(--spacing-sm); }
     .logo { gap: 0.5rem; }
     .logo-img { margin-left: 8px; }
-    .logo h1 { font-size: 1.25rem; }
+    .logo h1, .logo .logo-title { font-size: 1.25rem; }
     .qr-payment-options {
         grid-template-columns: 1fr;
         gap: var(--spacing-md);
@@ -2126,7 +2126,7 @@ img {
     .nav-flex { gap: var(--spacing-sm); }
     .logo { gap: 0.5rem; }
     .logo-img { margin-left: 8px; height: 56px; }
-    .logo h1 { font-size: 1.25rem; }
+    .logo h1, .logo .logo-title { font-size: 1.25rem; }
 
     /* Mobile inherits shared nav-menu above; only adjust typography */
 
@@ -2270,6 +2270,71 @@ img {
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border: 0;
+}
+
+/* Skip link for keyboard users */
+.skip-link {
+    position: absolute;
+    top: 0;
+    left: 0;
+    padding: 0.75rem 1rem;
+    background: #ffffff;
+    color: #000;
+    border: 2px solid var(--primary-color);
+    border-radius: 10px;
+    transform: translateY(-130%);
+    transition: transform 0.2s ease;
+    z-index: 2000;
+}
+
+.skip-link:focus {
+    transform: translateY(10px);
+}
+
+/* Logo title can be a span (for heading hierarchy) */
+.logo-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0;
+    line-height: 1.2;
+}
+
+/* Footer/social icons */
+.social-grid {
+    width: auto;
+    flex-basis: auto;
+    max-width: 120px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 12px;
+    align-items: center;
+    justify-items: center;
+    margin: 10px auto 0;
+}
+
+.social-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    background: #fff;
+    padding: 4px;
+    display: block;
+}
+
+/* Form field errors (avoid inline styles in JS) */
+.field-error {
+    color: var(--danger-color);
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+}
+
+/* Lightweight redirect page layout helper */
+.redirect-wrap {
+    max-width: 700px;
+    margin: 90px auto 0;
+    text-align: center;
+    padding: 24px;
 }
 
 /* Focus indicators */
@@ -3291,9 +3356,16 @@ a:focus {
     margin-bottom: 0.7rem;
 }
 .payment-options-subtitle { text-align:center; font-size:1.15rem; color:#222; margin-bottom:2.2rem; }
-.payment-options-grid { display:flex; justify-content:center; gap:32px; flex-wrap:wrap; }
+.payment-options-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
+    gap: 32px;
+    justify-content: center;
+    align-items: stretch;
+}
 .payment-option-card {
-    flex:1; min-width:260px; max-width:320px; background:#fff; border-radius:14px;
+    width: 100%;
+    background:#fff; border-radius:14px;
     box-shadow:0 2px 16px rgba(2,201,170,0.08); padding:28px 18px; display:flex; flex-direction:column; align-items:center; border:2px solid #f2f2f2;
 }
 .payment-card-accent { border-bottom:3px solid #02c9aa; width:60px; margin-bottom:16px; }
@@ -3309,6 +3381,13 @@ a:focus {
 }
 .credit-link--inactive {
     font-style: italic;
+}
+
+@media (max-width: 700px) {
+    .payment-options-grid {
+        grid-template-columns: 1fr;
+        gap: 18px;
+    }
 }
 
 /* Contact Us Section */

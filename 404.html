@@ -23,37 +23,18 @@
   .logo-img { border-radius: 10px; box-shadow: 0 4px 16px rgba(2,201,170,0.12); }
   /* Align logo image with text in nav */
   .logo { display: flex; align-items: center; gap: 1rem; }
-  .logo h1 { margin: 0; }
-    /* Footer social icons block (centered under brand text) */
-    .nf-social {
-      width: auto;
-      max-width: 120px;
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      grid-template-rows: repeat(2, 1fr);
-      gap: 12px;
-      align-items: center;
-      justify-items: center;
-      margin: 10px auto 0;
-    }
-    .nf-social img {
-      width: 40px;
-      height: 40px;
-      border-radius: 8px;
-      background: #fff;
-      padding: 4px;
-      display: block;
-    }
+  .logo .logo-title { margin: 0; }
   </style>
   <!-- Canonical not applicable for 404; skip JSON-LD to avoid noise -->
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="header">
     <nav class="navbar" role="navigation" aria-label="Main">
       <div class="nav-flex">
         <div class="logo">
           <img src="/images/THOHlogo.jpg" alt="The House Of Humanity Logo" class="logo-img" width="100" height="100" decoding="async" />
-          <h1>The House Of Humanity</h1>
+          <span class="logo-title">The House Of Humanity</span>
         </div>
         <div class="nav-menu-flex">
           <ul class="nav-menu" id="nav-menu" role="menubar">
@@ -104,12 +85,12 @@
       <div>
         <h3>The House Of Humanity</h3>
         <p>Serving our community with dignity, respect, and compassion. No one should go hungry.</p>
-        <div class="nf-social">
+        <div class="social-grid" aria-label="Social media">
           <a href="https://instagram.com/thehouseofhumanity_" aria-label="Instagram" target="_blank" rel="noopener">
-            <img src="/images/SocialIcons/IGicon.png" alt="Instagram" decoding="async" />
+            <img src="/images/SocialIcons/IGicon.png" alt="Instagram" class="social-icon" loading="lazy" decoding="async" width="40" height="40" />
           </a>
           <a href="https://facebook.com/thehouseofhumanity" aria-label="Facebook" target="_blank" rel="noopener">
-            <img src="/images/SocialIcons/Facebook.png" alt="Facebook" decoding="async" />
+            <img src="/images/SocialIcons/Facebook.png" alt="Facebook" class="social-icon" loading="lazy" decoding="async" width="40" height="40" />
           </a>
         </div>
       </div>

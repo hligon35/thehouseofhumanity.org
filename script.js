@@ -30,6 +30,25 @@ const throttle = (func, limit) => {
     };
 };
 
+// Basic input sanitization (client-side hygiene; server-side validation still required)
+const sanitizeText = (value, { maxLen = 2000 } = {}) => {
+    const str = String(value ?? '');
+    // Strip control chars; trim; clamp; remove angle brackets to reduce accidental HTML injection
+    return str
+        .replace(/[\u0000-\u001F\u007F]/g, '')
+        .replace(/[<>]/g, '')
+        .trim()
+        .slice(0, maxLen);
+};
+
+const ensureFocusable = (el) => {
+    if (!el || !(el instanceof HTMLElement)) return;
+    const focusableTags = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA']);
+    if (focusableTags.has(el.tagName)) return;
+    if (el.hasAttribute('tabindex')) return;
+    el.setAttribute('tabindex', '-1');
+};
+
 // Modern intersection observer for animations
 const observeElementsInView = () => {
     const elements = document.querySelectorAll('.mission-card, .stat, .option-card');
@@ -241,6 +260,7 @@ function initNavigation() {
                 });
                 
                 // Update focus for accessibility
+                ensureFocusable(target);
                 target.focus({ preventScroll: true });
             }
         });
@@ -300,6 +320,21 @@ function initForms() {
                     e.preventDefault();
                     return;
                 }
+
+                // Client-side sanitization (non-destructive)
+                try {
+                    const nameEl = form.querySelector('[name="Name"]');
+                    const emailEl = form.querySelector('[name="Email"]');
+                    const phoneEl = form.querySelector('[name="Phone"]');
+                    const topicEl = form.querySelector('[name="Topic"]');
+                    const msgEl = form.querySelector('[name="Message"]');
+
+                    if (nameEl) nameEl.value = sanitizeText(nameEl.value, { maxLen: 120 });
+                    if (emailEl) emailEl.value = sanitizeText(emailEl.value, { maxLen: 254 });
+                    if (phoneEl) phoneEl.value = sanitizeText(phoneEl.value, { maxLen: 40 });
+                    if (topicEl) topicEl.value = sanitizeText(topicEl.value, { maxLen: 120 });
+                    if (msgEl) msgEl.value = sanitizeText(msgEl.value, { maxLen: 2000 });
+                } catch (_) {}
 
                 // Validate
                 const data = Object.fromEntries(new FormData(form));
@@ -644,9 +679,6 @@ function showFieldError(field, message) {
     const errorElement = document.createElement('div');
     errorElement.className = 'field-error';
     errorElement.textContent = message;
-    errorElement.style.color = 'var(--danger-color)';
-    errorElement.style.fontSize = '0.875rem';
-    errorElement.style.marginTop = '0.25rem';
     
     field.parentNode.appendChild(errorElement);
 }

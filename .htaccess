@@ -27,7 +27,7 @@ RewriteEngine On
     # - Allow form submissions to script.google.com
     # - Keep broad https: allowances for images/connect to avoid breaking analytics/CDNs
     # - Consider tightening once verified in production
-    Header always set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; img-src 'self' data: https:; connect-src 'self' https:; frame-ancestors 'self'; frame-src 'self' https://script.google.com; form-action 'self' https://script.google.com; upgrade-insecure-requests"
+    Header always set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; img-src 'self' data: https:; connect-src 'self' https:; frame-ancestors 'self'; frame-src 'self' https://script.google.com; form-action 'self' https://script.google.com; upgrade-insecure-requests"
 
     # Frame options already set above; avoid duplicate headers
 
@@ -77,6 +77,13 @@ RewriteEngine On
             Header set Cache-Control "public, max-age=2592000, immutable"
         </IfModule>
     </FilesMatch>
+
+    # Service worker should not be cached immutably, or updates can get stuck
+    <IfModule mod_headers.c>
+        <Files "sw.js">
+            Header set Cache-Control "no-cache"
+        </Files>
+    </IfModule>
     
     # Images (long cache with immutable flag)
     ExpiresByType image/jpg "access plus 1 year"
@@ -114,10 +121,10 @@ FileETag None
 # Remove server signature (handled at server level; not allowed in .htaccess)
 # ServerTokens Prod
 
-# Canonical host: force HTTPS and www.thehouseofhumanity.org
+# Canonical host: force HTTPS and thehouseofhumanity.org
 RewriteCond %{HTTPS} off [OR]
-RewriteCond %{HTTP_HOST} !^www\.thehouseofhumanity\.org$ [NC]
-RewriteRule ^ https://www.thehouseofhumanity.org%{REQUEST_URI} [L,R=301]
+RewriteCond %{HTTP_HOST} ^www\.thehouseofhumanity\.org$ [NC]
+RewriteRule ^ https://thehouseofhumanity.org%{REQUEST_URI} [L,R=301]
 
 # Custom error pages
 ErrorDocument 404 /404.html
