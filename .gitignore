@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.open-next/
+.data/
+.wrangler/
+.dev.vars
+.env.local
+.env.production.local
+.env.development.local
+cloudflare-env.d.ts
+.env*
+!.env.example
+PROMPTS
+.dev*
+!.dev.vars.example
+.vscode/
+*.tsbuildinfo

@@ -1,0 +1,20 @@
+{
+    "name": "The House of Humanity",
+    "short_name": "THOH",
+    "description": "Restoring Dignity and Renewing Dreams - A beacon of hope for homeless families and domestic abuse victims",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#02c9aa",
+    "orientation": "portrait-primary",
+    "icons": [
+        {
+            "src": "images/THOHlogo.png",
+            "sizes": "500x500",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": ["nonprofit", "social", "community"],
+    "lang": "en-US"
+}
