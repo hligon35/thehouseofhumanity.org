@@ -1,10 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import sqlite3 from "sqlite3";
-import { open, type Database } from "sqlite";
 
 type QueryParams = unknown[];
+
+type SqliteDatabaseLike = {
+  get<T>(sql: string, ...params: QueryParams): Promise<T | undefined>;
+  all<T>(sql: string, ...params: QueryParams): Promise<T>;
+  run(sql: string, ...params: QueryParams): Promise<unknown>;
+  exec(sql: string): Promise<void>;
+};
 
 type DatabaseClient = {
   get<T>(sql: string, ...params: QueryParams): Promise<T | undefined>;
@@ -27,7 +32,7 @@ type D1DatabaseLike = {
 
 let databasePromise: Promise<DatabaseClient> | undefined;
 
-function createSqliteClient(database: Database): DatabaseClient {
+function createSqliteClient(database: SqliteDatabaseLike): DatabaseClient {
   return {
     async get<T>(sql: string, ...params: QueryParams) {
       const row = await database.get<T>(sql, ...params);
@@ -94,67 +99,101 @@ async function migrateAdminCredentials(database: DatabaseClient) {
     return;
   }
 
-  await database.exec(`
-    CREATE TABLE IF NOT EXISTS admin_credentials_v2 (
-      username TEXT PRIMARY KEY,
-      password_hash TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
+  await execStatements(database, [
+    `
+      CREATE TABLE IF NOT EXISTS admin_credentials_v2 (
+        username TEXT PRIMARY KEY,
+        password_hash TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `,
+    `
+      INSERT OR IGNORE INTO admin_credentials_v2 (username, password_hash, updated_at)
+      SELECT username, password_hash, updated_at FROM admin_credentials
+    `,
+    "DROP TABLE admin_credentials",
+    "ALTER TABLE admin_credentials_v2 RENAME TO admin_credentials"
+  ]);
+}
 
-    INSERT OR IGNORE INTO admin_credentials_v2 (username, password_hash, updated_at)
-    SELECT username, password_hash, updated_at FROM admin_credentials;
-
-    DROP TABLE admin_credentials;
-
-    ALTER TABLE admin_credentials_v2 RENAME TO admin_credentials;
-  `);
+async function execStatements(database: DatabaseClient, statements: string[]) {
+  for (const statement of statements) {
+    await database.run(statement.trim());
+  }
 }
 
 async function ensureSchema(database: DatabaseClient) {
-  await database.exec(`
-    CREATE TABLE IF NOT EXISTS subscribers (
-      id TEXT PRIMARY KEY,
-      email TEXT NOT NULL UNIQUE,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS scheduled_newsletters (
-      id TEXT PRIMARY KEY,
-      subject TEXT NOT NULL,
-      body TEXT NOT NULL,
-      scheduled_for_iso TEXT NOT NULL,
-      recipient_ids TEXT NOT NULL,
-      status TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      sent_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS site_content (
-      singleton_key TEXT PRIMARY KEY,
-      published_json TEXT NOT NULL,
-      draft_json TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      published_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS admin_credentials (
-      username TEXT PRIMARY KEY,
-      password_hash TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS password_reset_tokens (
-      id TEXT PRIMARY KEY,
-      username TEXT NOT NULL,
-      token_hash TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      used_at TEXT,
-      created_at TEXT NOT NULL
-    );
-  `);
+  await execStatements(database, [
+    `
+      CREATE TABLE IF NOT EXISTS subscribers (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+      )
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS scheduled_newsletters (
+        id TEXT PRIMARY KEY,
+        subject TEXT NOT NULL,
+        body TEXT NOT NULL,
+        scheduled_for_iso TEXT NOT NULL,
+        recipient_ids TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        sent_at TEXT
+      )
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS site_content (
+        singleton_key TEXT PRIMARY KEY,
+        published_json TEXT NOT NULL,
+        draft_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        published_at TEXT NOT NULL
+      )
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS admin_credentials (
+        username TEXT PRIMARY KEY,
+        password_hash TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `,
+    `
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        token_hash TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL
+      )
+    `
+  ]);
 
   await migrateAdminCredentials(database);
+}
+
+async function openLocalSqliteDatabase() {
+  const moduleModule = (await import("node:module")) as {
+    createRequire?: (url: string) => NodeRequire;
+    default: { createRequire: (url: string) => NodeRequire };
+  };
+  const require = (moduleModule.createRequire ?? moduleModule.default.createRequire)(import.meta.url);
+  const sqliteModule = require(["sql", "ite"].join("")) as {
+    open(options: { filename: string; driver: unknown }): Promise<SqliteDatabaseLike>;
+  };
+  const sqlite3Module = require(["sqlite", "3"].join("")) as {
+    Database: unknown;
+    default?: { Database: unknown };
+  };
+  const sqlite3 = sqlite3Module.default ?? sqlite3Module;
+
+  return sqliteModule.open({
+    filename: path.join(process.cwd(), ".data", "admin.db"),
+    driver: sqlite3.Database
+  });
 }
 
 export async function getDb() {
@@ -170,10 +209,7 @@ export async function getDb() {
       const dataDirectory = path.join(process.cwd(), ".data");
       await fs.mkdir(dataDirectory, { recursive: true });
 
-      const sqliteDatabase = await open({
-        filename: path.join(dataDirectory, "admin.db"),
-        driver: sqlite3.Database
-      });
+      const sqliteDatabase = await openLocalSqliteDatabase();
 
       const database = createSqliteClient(sqliteDatabase);
       await ensureSchema(database);

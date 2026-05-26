@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "dev:app": "next dev",
-    "build": "next build",
-    "build:app": "next build",
+    "build": "next build --webpack",
+    "build:app": "next build --webpack",
     "build:worker": "opennextjs-cloudflare build",
     "build:all": "npm run build:app && npm run build:worker",
     "start": "next start",

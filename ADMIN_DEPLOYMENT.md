@@ -99,6 +99,7 @@ Do not use a raw `npx wrangler deploy` repository build command in Cloudflare fo
 ## Deployment notes
 
 - The admin runtime has been upgraded to Next.js 16 and the current OpenNext Cloudflare adapter line so the project no longer depends on the deprecated `0.6.x` adapter branch.
+- Production builds intentionally use webpack via `next build --webpack` because the Turbopack server runtime has produced chunk-loading failures in the deployed Cloudflare Worker for this project.
 - `wrangler.jsonc` keeps `main` pointed at `worker/index.ts` to preserve the custom scheduled handler required by the admin prompt.
 - `worker/index.ts` reuses the generated OpenNext fetch handler after `npm run cf:build` creates `.open-next/worker.js`.
 - Routes now cover both apex and `www` hostnames with `/*`, so the same Worker serves the public site, the `/admin` dashboard, and the API routes.
