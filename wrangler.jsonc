@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "thehouseofhumanity-admin-worker",
+  "name": "thehouseofhumanity",
   "main": "worker/index.ts",
   "compatibility_date": "2026-05-25",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
@@ -11,33 +11,38 @@
   "services": [
     {
       "binding": "WORKER_SELF_REFERENCE",
-      "service": "thehouseofhumanity-admin-worker"
+      "service": "thehouseofhumanity"
     }
   ],
   "routes": [
     {
-      "pattern": "thehouseofhumanity.org/admin*",
+      "pattern": "thehouseofhumanity.org/*",
       "zone_name": "thehouseofhumanity.org"
     },
     {
-      "pattern": "thehouseofhumanity.org/api/*",
-      "zone_name": "thehouseofhumanity.org"
-    },
-    {
-      "pattern": "www.thehouseofhumanity.org/admin*",
-      "zone_name": "thehouseofhumanity.org"
-    },
-    {
-      "pattern": "www.thehouseofhumanity.org/api/*",
+      "pattern": "www.thehouseofhumanity.org/*",
       "zone_name": "thehouseofhumanity.org"
     }
   ],
   "triggers": {
     "crons": ["*/15 * * * *"]
   },
+  "d1_databases": [
+    {
+      "binding": "DASHBOARD_DB",
+      "database_name": "thoh-dashboard",
+      "database_id": "7314a6a5-c902-4b08-8ea3-4d951435d9f3"
+    }
+  ],
   "vars": {
     "ADMIN_BASE_URL": "https://www.thehouseofhumanity.org"
   },
+  "analytics_engine_datasets": [
+    {
+      "binding": "thoh_analytics_engine",
+      "dataset": "thoh_analytics"
+    }
+  ],
   "images": {
     "binding": "IMAGES"
   }

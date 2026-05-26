@@ -1,11 +1,11 @@
 # Admin Deployment
 
-This repository now contains two delivery paths:
+This repository now contains two delivery paths inside one Cloudflare Worker deployment:
 
-- the existing public site, still served from the root-level static HTML files
-- the Next.js admin worker, served only on `/admin*` and `/api/*`
+- the public website, served from `/` and the static files mirrored under `public/website`
+- the Next.js admin runtime and APIs, served from `/admin*` and `/api/*`
 
-The Cloudflare worker configuration is intentionally route-scoped so deployment of the admin runtime does not replace the static public site.
+The Cloudflare worker configuration now owns the full site hostname so the domain does not fall through to a separate default or "Hello World" Worker.
 
 ## Local environment
 
@@ -37,6 +37,24 @@ Set these as Cloudflare secrets instead of plain vars:
 - `CRON_PROCESS_SECRET`
 - `SENDGRID_API_KEY`
 - `SENDGRID_FROM_EMAIL`
+
+## GitHub auto-deploy
+
+This repo now includes a GitHub Actions workflow at `.github/workflows/deploy-worker.yml` that deploys automatically when code is pushed to `main`. It also supports manual runs through the Actions tab with `workflow_dispatch`.
+
+Add these GitHub repository secrets before relying on the workflow:
+
+- `CLOUDFLARE_API_TOKEN`: API token with permission to deploy this Worker
+- `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account ID that owns `thehouseofhumanity.org`
+
+Keep the app runtime credentials in Cloudflare Worker Variables and Secrets, not in GitHub Actions secrets. The workflow only needs enough access to build and deploy the worker; it should not become the source of truth for `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET`, `CRON_PROCESS_SECRET`, or SendGrid credentials.
+
+Recommended GitHub setup:
+
+1. Add `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` under GitHub repository Settings > Secrets and variables > Actions.
+2. Keep the Worker variables and encrypted secrets configured in Cloudflare for the production worker.
+3. Push to `main` to trigger the deploy workflow automatically.
+4. Use the Actions tab if you need to re-run a deploy without creating another commit.
 
 Recommended setup commands:
 
@@ -83,7 +101,7 @@ Do not use a raw `npx wrangler deploy` repository build command in Cloudflare fo
 - The admin runtime has been upgraded to Next.js 16 and the current OpenNext Cloudflare adapter line so the project no longer depends on the deprecated `0.6.x` adapter branch.
 - `wrangler.jsonc` keeps `main` pointed at `worker/index.ts` to preserve the custom scheduled handler required by the admin prompt.
 - `worker/index.ts` reuses the generated OpenNext fetch handler after `npm run cf:build` creates `.open-next/worker.js`.
-- Routes are limited to `/admin*` and `/api/*` on both apex and `www`, so the root static site remains untouched.
+- Routes now cover both apex and `www` hostnames with `/*`, so the same Worker serves the public site, the `/admin` dashboard, and the API routes.
 - `public/_headers` enables immutable caching for generated Next static assets.
 - `_redirects` must stay relative-path only for Cloudflare static asset processing; host-level canonical redirects should be handled with a Cloudflare Redirect Rule, not in `_redirects`.
 
@@ -93,4 +111,5 @@ Do not use a raw `npx wrangler deploy` repository build command in Cloudflare fo
 2. Set the Cloudflare worker secrets and vars, especially `CRON_PROCESS_SECRET`.
 3. Run `npm run cf:build` locally at least once before first deployment.
 4. Run `npm run preview` to verify `/admin` and the API routes in the Workers runtime.
-5. Deploy with `npm run deploy` or configure Workers Builds with `npm install`, then `npx @opennextjs/cloudflare build`, then `npx @opennextjs/cloudflare deploy`.
+5. Add the required GitHub Actions secrets if you want automatic deployment on push to `main`.
+6. Deploy with `npm run deploy` locally or push to `main` and let `.github/workflows/deploy-worker.yml` deploy automatically.

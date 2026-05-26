@@ -1,11 +1,84 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import sqlite3 from "sqlite3";
 import { open, type Database } from "sqlite";
 
-let databasePromise: Promise<Database> | undefined;
+type QueryParams = unknown[];
 
-async function migrateAdminCredentials(database: Database) {
+type DatabaseClient = {
+  get<T>(sql: string, ...params: QueryParams): Promise<T | undefined>;
+  all<T>(sql: string, ...params: QueryParams): Promise<T>;
+  run(sql: string, ...params: QueryParams): Promise<void>;
+  exec(sql: string): Promise<void>;
+};
+
+type D1PreparedStatementLike = {
+  bind(...values: QueryParams): D1PreparedStatementLike;
+  first<T>(): Promise<T | null>;
+  all<T>(): Promise<{ results?: T[] }>;
+  run(): Promise<unknown>;
+};
+
+type D1DatabaseLike = {
+  prepare(query: string): D1PreparedStatementLike;
+  exec(query: string): Promise<unknown>;
+};
+
+let databasePromise: Promise<DatabaseClient> | undefined;
+
+function createSqliteClient(database: Database): DatabaseClient {
+  return {
+    async get<T>(sql: string, ...params: QueryParams) {
+      const row = await database.get<T>(sql, ...params);
+      return row ?? undefined;
+    },
+    async all<T>(sql: string, ...params: QueryParams) {
+      return (await database.all(sql, ...params)) as T;
+    },
+    async run(sql: string, ...params: QueryParams) {
+      await database.run(sql, ...params);
+    },
+    async exec(sql: string) {
+      await database.exec(sql);
+    }
+  };
+}
+
+function createD1Client(database: D1DatabaseLike): DatabaseClient {
+  const prepare = (sql: string, params: QueryParams) => {
+    const statement = database.prepare(sql);
+    return params.length > 0 ? statement.bind(...params) : statement;
+  };
+
+  return {
+    async get<T>(sql: string, ...params: QueryParams) {
+      const row = await prepare(sql, params).first<T>();
+      return row ?? undefined;
+    },
+    async all<T>(sql: string, ...params: QueryParams) {
+      const result = await prepare(sql, params).all<unknown>();
+      return (result.results ?? []) as T;
+    },
+    async run(sql: string, ...params: QueryParams) {
+      await prepare(sql, params).run();
+    },
+    async exec(sql: string) {
+      await database.exec(sql);
+    }
+  };
+}
+
+async function getCloudflareD1Database() {
+  try {
+    const { env } = await getCloudflareContext({ async: true });
+    return env.DASHBOARD_DB as D1DatabaseLike | undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function migrateAdminCredentials(database: DatabaseClient) {
   const adminCredentialTable = await database.get<{ name: string }>(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'admin_credentials'"
   );
@@ -37,7 +110,7 @@ async function migrateAdminCredentials(database: Database) {
   `);
 }
 
-async function ensureSchema(database: Database) {
+async function ensureSchema(database: DatabaseClient) {
   await database.exec(`
     CREATE TABLE IF NOT EXISTS subscribers (
       id TEXT PRIMARY KEY,
@@ -87,14 +160,22 @@ async function ensureSchema(database: Database) {
 export async function getDb() {
   if (!databasePromise) {
     databasePromise = (async () => {
+      const d1Database = await getCloudflareD1Database();
+      if (d1Database) {
+        const database = createD1Client(d1Database);
+        await ensureSchema(database);
+        return database;
+      }
+
       const dataDirectory = path.join(process.cwd(), ".data");
       await fs.mkdir(dataDirectory, { recursive: true });
 
-      const database = await open({
+      const sqliteDatabase = await open({
         filename: path.join(dataDirectory, "admin.db"),
         driver: sqlite3.Database
       });
 
+      const database = createSqliteClient(sqliteDatabase);
       await ensureSchema(database);
       return database;
     })();
