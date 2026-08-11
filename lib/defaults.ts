@@ -20,13 +20,13 @@ export const defaultSiteContent: SiteEditorContent = {
   events: {
     heading: "Seasonal Events",
     intro:
-      "There are no upcoming public events scheduled right now. Please check back soon or contact us if you would like to be added to future event and volunteer updates.",
+      "Be on the lookout - exciting community events are coming your way! Sign up for updates or check back soon so you don't miss out.",
     items: [
       {
         id: "thanksgiving-highlight",
-        title: "Past Community Outreach Highlight",
+        title: "Stay Tuned for Upcoming Events",
         description:
-          "No upcoming events are scheduled at this time. Check back soon, or use the contact form to request future event and volunteer updates.",
+          "We have exciting events in the works - be on the lookout! Check back soon, or sign up to receive updates directly in your inbox.",
         ctaLabel: "Request Event Updates",
         ctaHref: "#contact",
         imageSrc: "images/THOHTGevent.webp",

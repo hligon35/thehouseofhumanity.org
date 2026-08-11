@@ -770,19 +770,6 @@
         </main>
 
         <!-- Footer -->
-        <!-- Event Image Modal Overlay -->
-        <div id="eventImageModal" class="event-image-modal" role="dialog" aria-modal="true" aria-labelledby="eventModalTitle" hidden>
-                    <div class="event-image-modal-content">
-            <button type="button" class="event-image-modal-close" aria-label="Close flyer preview">Close</button>
-            <h2 id="eventModalTitle" class="sr-only">Thanksgiving Event flyer preview</h2>
-                    <img
-                id="eventModalImg"
-                src="images/THOHTGevent.webp"
-                alt="Thanksgiving community outreach flyer"
-                        decoding="async"
-            />
-                    </div>
-        </div>
         <script type="application/ld+json">
             {
                 "@context": "https://schema.org",
@@ -832,46 +819,6 @@
                     }
                 ]
             }
-        </script>
-        <script defer>
-            document.addEventListener('DOMContentLoaded', function () {
-                var eventTrigger = document.querySelector('.event-image-trigger');
-                var modal = document.getElementById('eventImageModal');
-                var modalImg = document.getElementById('eventModalImg');
-                var closeBtn = document.querySelector('.event-image-modal-close');
-                var lastFocusedElement = null;
-
-                function closeEventModal() {
-                    modal.hidden = true;
-                    modal.classList.remove('is-open');
-                    document.body.style.overflow = '';
-                    if (lastFocusedElement) {
-                        lastFocusedElement.focus();
-                    }
-                }
-
-                if (eventTrigger && modal && modalImg && closeBtn) {
-                    eventTrigger.addEventListener('click', function () {
-                        lastFocusedElement = document.activeElement;
-                        modal.hidden = false;
-                        modal.classList.add('is-open');
-                        modalImg.src = eventTrigger.querySelector('img').src;
-                        document.body.style.overflow = 'hidden';
-                        closeBtn.focus();
-                    });
-                    closeBtn.addEventListener('click', closeEventModal);
-                    modal.addEventListener('click', function (event) {
-                        if (event.target === modal) {
-                            closeEventModal();
-                        }
-                    });
-                    document.addEventListener('keydown', function (event) {
-                        if (event.key === 'Escape' && !modal.hidden) {
-                            closeEventModal();
-                        }
-                    });
-                }
-            });
         </script>
         <footer class="footer">
             <div class="footer-main">
