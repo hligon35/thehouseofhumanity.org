@@ -72,7 +72,8 @@ function createD1Client(database: D1DatabaseLike): DatabaseClient {
 async function getCloudflareD1Database() {
   try {
     const { env } = await getCloudflareContext({ async: true });
-    return env.DASHBOARD_DB as D1DatabaseLike | undefined;
+    const runtimeEnv = env as { DASHBOARD_DB?: D1DatabaseLike };
+    return runtimeEnv.DASHBOARD_DB;
   } catch {
     return undefined;
   }
