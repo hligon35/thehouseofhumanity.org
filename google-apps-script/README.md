@@ -1,0 +1,1 @@
+# Retired integration\n\nGoogle Apps Script is no longer used by this repository. The public contact form, D1 submissions inbox, analytics, and Resend notifications are served by the Cloudflare Worker.\n
