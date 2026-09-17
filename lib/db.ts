@@ -23,8 +23,8 @@ let databasePromise: Promise<DatabaseClient> | undefined;
 
 function createSqliteClient(database: Database): DatabaseClient {
   return {
-    async get<T>(sql, ...params) { return (await database.get<T>(sql, ...params)) ?? undefined; },
-    async all<T>(sql, ...params) { return (await database.all(sql, ...params)) as T; },
+    async get<T>(sql: string, ...params: QueryParams) { return (await database.get<T>(sql, ...params)) ?? undefined; },
+    async all<T>(sql: string, ...params: QueryParams) { return (await database.all(sql, ...params)) as T; },
     async run(sql, ...params) { await database.run(sql, ...params); },
     async exec(sql) { await database.exec(sql); }
   };
