@@ -1,7 +1,6 @@
-/*
-  Cloudflare Worker applies these security headers at runtime.
-  This file keeps static-asset behavior correct when assets are inspected separately.
+# Cloudflare Worker applies security headers at runtime.
 
+/
 /*
   Cache-Control: public, max-age=3600, stale-while-revalidate=86400
 
