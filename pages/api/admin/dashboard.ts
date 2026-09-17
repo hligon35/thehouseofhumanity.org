@@ -8,12 +8,7 @@ export default async function handler(request: NextApiRequest, response: NextApi
     response.status(405).json({ error: "Method not allowed" });
     return;
   }
-
-  const session = requireApiSession(request, response);
-  if (!session) {
-    return;
-  }
-
-  const data = await getDashboardData();
-  response.status(200).json({ username: session.username, data });
+  const principal = await requireApiSession(request, response);
+  if (!principal) return;
+  response.status(200).json({ principal, data: await getDashboardData() });
 }
