@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
-import { defaultAdminData, defaultSiteContent } from "@/lib/defaults";
+import { defaultSiteContent } from "@/lib/defaults";
 import { getDb } from "@/lib/db";
 import { getRuntimeEnv } from "@/lib/runtime-env";
 import type {
