@@ -36,8 +36,8 @@ function createD1Client(database: D1DatabaseLike): DatabaseClient {
     return params.length ? statement.bind(...params) : statement;
   };
   return {
-    async get<T>(sql, ...params) { return (await prepare(sql, params).first<T>()) ?? undefined; },
-    async all<T>(sql, ...params) {
+    async get<T>(sql: string, ...params: QueryParams) { return (await prepare(sql, params).first<T>()) ?? undefined; },
+    async all<T>(sql: string, ...params: QueryParams) {
       const result = await prepare(sql, params).all<unknown>();
       return (result.results ?? []) as T;
     },
