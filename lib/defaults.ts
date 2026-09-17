@@ -200,6 +200,8 @@ export const defaultAdminData: AdminData = {
     }
   },
   newsletters: [],
+  submissions: [],
+  activity: [],
   siteContent: {
     published: defaultSiteContent,
     draft: defaultSiteContent,
