@@ -674,13 +674,11 @@
                 <div class="contact-form-container">
                     <div class="contact-content">
                         <!-- Contact Form - Optimized -->
-                        <!-- TODO: After deploying the new Google Apps Script Web App, replace the action URL below with the new deployment URL. -->
                         <form
                             id="contactForm"
                             class="contact-form"
-                            action="https://script.google.com/macros/s/AKfycbx0sgrC6yf--v3FrVyv8M3kTyBbv3ev1IDTNhlVuYiWCEAHLG3jYjnK68EygBOxDm03xg/exec"
+                            action="/api/contact"
                             method="POST"
-                            target="formFrame"
                             novalidate
                         >
                             <input
@@ -753,16 +751,6 @@
                             </div>
                             <!-- Inline confirmation / error message -->
                                             <div id="formMessage" role="status" aria-live="polite" aria-atomic="true"></div>
-                                            <iframe
-                                name="formFrame"
-                                id="formFrame"
-                                title="hidden form submission"
-                                class="hidden"
-                                hidden
-                                tabindex="-1"
-                                                aria-hidden="true"
-                                                loading="lazy"  
-                            ></iframe>
                         </form>
                     </div>
                 </div>
