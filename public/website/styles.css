@@ -3602,3 +3602,10 @@ a:focus {
     text-shadow: 1px 2px 8px #6c2eb722;
     letter-spacing: 1px;
 }
+
+/* Cloudflare API form feedback */
+#formMessage{display:block;margin-top:.75rem;font-weight:700}
+#formMessage[data-type="success"]{color:#126044;background:#d8f7ec;border:1px solid #93dfc3;border-radius:8px;padding:.7rem}
+#formMessage[data-type="error"]{color:#8e1d2d;background:#ffe2e4;border:1px solid #f4a8b0;border-radius:8px;padding:.7rem}
+.thoh-site-notice{position:fixed;right:1rem;top:1rem;z-index:10000;max-width:360px;padding:.85rem 1rem;border-radius:10px;color:#fff;box-shadow:0 10px 28px rgba(0,0,0,.2);font-weight:700}
+.thoh-site-notice--success{background:#126044}.thoh-site-notice--error{background:#8e1d2d}.thoh-site-notice--info{background:#1e5d82}
