@@ -14,19 +14,12 @@
       "service": "thehouseofhumanity"
     }
   ],
+  "migrations_dir": "migrations",
   "routes": [
-    {
-      "pattern": "thehouseofhumanity.org/*",
-      "zone_name": "thehouseofhumanity.org"
-    },
-    {
-      "pattern": "www.thehouseofhumanity.org/*",
-      "zone_name": "thehouseofhumanity.org"
-    }
+    { "pattern": "thehouseofhumanity.org/*", "zone_name": "thehouseofhumanity.org" },
+    { "pattern": "www.thehouseofhumanity.org/*", "zone_name": "thehouseofhumanity.org" }
   ],
-  "triggers": {
-    "crons": ["*/15 * * * *"]
-  },
+  "triggers": { "crons": ["*/15 * * * *"] },
   "d1_databases": [
     {
       "binding": "DASHBOARD_DB",
@@ -35,15 +28,8 @@
     }
   ],
   "vars": {
-    "ADMIN_BASE_URL": "https://www.thehouseofhumanity.org"
-  },
-  "analytics_engine_datasets": [
-    {
-      "binding": "thoh_analytics_engine",
-      "dataset": "thoh_analytics"
-    }
-  ],
-  "images": {
-    "binding": "IMAGES"
+    "ADMIN_BASE_URL": "https://thehouseofhumanity.org",
+    "NEXT_PUBLIC_SITE_URL": "https://thehouseofhumanity.org",
+    "ALLOW_LOCAL_ADMIN_LOGIN": "false"
   }
 }
