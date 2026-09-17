@@ -1,15 +1,6 @@
-# Robots.txt for The House of Humanity
-# Optimized for SEO
-
+# The House of Humanity robots policy
 User-agent: *
 Allow: /
-
-# Disallow admin or sensitive areas (when they exist)
-# Disallow: /admin/
-# Disallow: /private/
-
-# Sitemap location
+Disallow: /admin
+Disallow: /api
 Sitemap: https://thehouseofhumanity.org/sitemap.xml
-
-# Crawl delay (optional - helps with server load)
-Crawl-delay: 1
