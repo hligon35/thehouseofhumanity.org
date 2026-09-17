@@ -14,7 +14,6 @@
       "service": "thehouseofhumanity"
     }
   ],
-  "migrations_dir": "migrations",
   "routes": [
     { "pattern": "thehouseofhumanity.org/*", "zone_name": "thehouseofhumanity.org" },
     { "pattern": "www.thehouseofhumanity.org/*", "zone_name": "thehouseofhumanity.org" }
@@ -24,7 +23,8 @@
     {
       "binding": "DASHBOARD_DB",
       "database_name": "thoh-dashboard",
-      "database_id": "7314a6a5-c902-4b08-8ea3-4d951435d9f3"
+      "database_id": "7314a6a5-c902-4b08-8ea3-4d951435d9f3",
+      "migrations_dir": "migrations"
     }
   ],
   "vars": {
