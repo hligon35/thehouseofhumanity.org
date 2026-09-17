@@ -65,10 +65,45 @@ function allowedAccessEmails(env: Record<string, string | undefined>) {
   return (env.ADMIN_ALLOWED_EMAILS ?? "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
 }
 
+function decodeJsonPart(value: string) {
+  return JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Record<string, unknown>;
+}
+
+async function validateAccessAssertion(token: string, env: Record<string, string | undefined>) {
+  const teamDomain = env.CF_ACCESS_TEAM_DOMAIN?.replace(/\/$/, "");
+  const audience = env.CF_ACCESS_AUD;
+  if (!teamDomain || !audience || !globalThis.crypto?.subtle) return false;
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return false;
+    const header = decodeJsonPart(parts[0]);
+    const payload = decodeJsonPart(parts[1]);
+    const keysResponse = await fetch(teamDomain + "/cdn-cgi/access/certs");
+    if (!keysResponse.ok) return false;
+    const keySet = await keysResponse.json() as { keys?: Array<Record<string, unknown>> };
+    const jwk = keySet.keys?.find((key) => key.kid === header.kid);
+    if (!jwk) return false;
+    const key = await globalThis.crypto.subtle.importKey(
+      "jwk", jwk as JsonWebKey, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]
+    );
+    const signingInput = new TextEncoder().encode(parts[0] + "." + parts[1]);
+    const signature = Uint8Array.from(Buffer.from(parts[2], "base64url"));
+    const valid = await globalThis.crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, signature, signingInput);
+    const exp = typeof payload.exp === "number" ? payload.exp * 1000 : 0;
+    const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+    return valid && exp > Date.now() && aud.includes(audience);
+  } catch {
+    return false;
+  }
+}
+
 export async function getAdminIdentity(request: RequestWithHeaders): Promise<AdminPrincipal | null> {
+  const env = await getRuntimeEnv();
   const accessEmail = getHeader(request, "cf-access-authenticated-user-email")?.trim().toLowerCase();
+  const accessAssertion = getHeader(request, "cf-access-jwt-assertion");
   if (accessEmail) {
-    const env = await getRuntimeEnv();
+    const configuredJwtValidation = Boolean(env.CF_ACCESS_TEAM_DOMAIN && env.CF_ACCESS_AUD);
+    if (configuredJwtValidation && (!accessAssertion || !(await validateAccessAssertion(accessAssertion, env)))) return null;
     const allowed = allowedAccessEmails(env);
     if (allowed.length && !allowed.includes(accessEmail)) return null;
     return { username: accessEmail, email: accessEmail, authType: "cloudflare-access" };
