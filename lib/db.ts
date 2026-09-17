@@ -1,10 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import sqlite3 from "sqlite3";
-import { open, type Database } from "sqlite";
 
 type QueryParams = unknown[];
+type LocalDatabase = {
+  get<T>(sql: string, ...params: QueryParams): Promise<T | undefined>;
+  all<T>(sql: string, ...params: QueryParams): Promise<T>;
+  run(sql: string, ...params: QueryParams): Promise<unknown>;
+  exec(sql: string): Promise<unknown>;
+};
 type DatabaseClient = {
   get<T>(sql: string, ...params: QueryParams): Promise<T | undefined>;
   all<T>(sql: string, ...params: QueryParams): Promise<T>;
@@ -21,7 +25,7 @@ type D1DatabaseLike = { prepare(query: string): D1PreparedStatementLike; exec(qu
 
 let databasePromise: Promise<DatabaseClient> | undefined;
 
-function createSqliteClient(database: Database): DatabaseClient {
+function createSqliteClient(database: LocalDatabase): DatabaseClient {
   return {
     async get<T>(sql: string, ...params: QueryParams) { return (await database.get<T>(sql, ...params)) ?? undefined; },
     async all<T>(sql: string, ...params: QueryParams) { return (await database.all(sql, ...params)) as T; },
@@ -78,6 +82,7 @@ export async function getDb() {
       if (d1) return createD1Client(d1);
       const dataDirectory = path.join(process.cwd(), ".data");
       await fs.mkdir(dataDirectory, { recursive: true });
+      const [{ default: sqlite3 }, { open }] = await Promise.all([import("sqlite3"), import("sqlite")]);
       const sqliteDatabase = await open({ filename: path.join(dataDirectory, "admin.db"), driver: sqlite3.Database });
       const database = createSqliteClient(sqliteDatabase);
       await ensureLocalSchema(database);
