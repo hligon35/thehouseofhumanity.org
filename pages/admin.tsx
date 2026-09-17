@@ -1,7 +1,7 @@
 import Head from "next/head";
 import Image from "next/image";
 import type { GetServerSideProps } from "next";
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   getDashboardData
 } from "@/lib/admin-store";
@@ -50,7 +50,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="thoh-field"><span>{label}</span>{children}</label>;
 }
 
