@@ -10,6 +10,7 @@ function showFormMessage(form, message, type) {
   region.textContent = message;
   region.dataset.type = type || "info";
   region.hidden = false;
+  region.style.display = "block";
 }
 
 function showNotice(message, type) {
