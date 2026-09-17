@@ -1,3 +1,18 @@
+CREATE TABLE IF NOT EXISTS admin_credentials (
+  username TEXT PRIMARY KEY,
+  password_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  token_hash TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS subscribers (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
