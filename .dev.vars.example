@@ -1,3 +1,12 @@
-NEXTJS_ENV=development
-ADMIN_BASE_URL=http://127.0.0.1:8787
-CRON_PROCESS_SECRET=replace-with-long-random-cron-secret
+NODE_ENV=development
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+ADMIN_BASE_URL=http://localhost:3000
+ALLOW_LOCAL_ADMIN_LOGIN=true
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=change-me-local-password
+ADMIN_SESSION_SECRET=change-me-local-session-secret
+CRON_PROCESS_SECRET=change-me-local-cron-secret
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=
+RESEND_REPLY_TO=
+CONTACT_TO_EMAIL=
