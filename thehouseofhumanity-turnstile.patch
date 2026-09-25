@@ -1,0 +1,991 @@
+From 57a77eb458a01eb3e87420bba9c24168097ed04b Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Fri, 25 Sep 2026 06:09:06 +0700
+Subject: [PATCH 1/2] feat: protect contact form from spam
+
+---
+ .dev.vars.example                           |  3 +
+ .env.example                                |  7 ++
+ index.html                                  |  2 +
+ lib/admin-store.ts                          | 36 ++++++++
+ lib/db.ts                                   |  4 +-
+ migrations/0002_contact_form_protection.sql |  8 ++
+ pages/api/contact-config.ts                 | 14 ++++
+ pages/api/contact.ts                        | 93 ++++++++++++++++++++-
+ public/website/index.html                   |  2 +
+ public/website/script.js                    | 79 ++++++++++++++++-
+ script.js                                   | 79 ++++++++++++++++-
+ worker/index.ts                             |  2 +-
+ wrangler.jsonc                              |  4 +-
+ 13 files changed, 320 insertions(+), 13 deletions(-)
+ create mode 100644 migrations/0002_contact_form_protection.sql
+ create mode 100644 pages/api/contact-config.ts
+
+diff --git a/.dev.vars.example b/.dev.vars.example
+index d4c9045..8c98501 100644
+--- a/.dev.vars.example
++++ b/.dev.vars.example
+@@ -10,3 +10,6 @@ RESEND_API_KEY=
+ RESEND_FROM_EMAIL=
+ RESEND_REPLY_TO=
+ CONTACT_TO_EMAIL=
++TURNSTILE_SITE_KEY=1x00000000000000000000AA
++TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
++CONTACT_FORM_REQUIRE_TURNSTILE=false
+diff --git a/.env.example b/.env.example
+index 340b513..f01de29 100644
+--- a/.env.example
++++ b/.env.example
+@@ -21,6 +21,13 @@ RESEND_FROM_EMAIL=info@thehouseofhumanity.org
+ RESEND_REPLY_TO=info@thehouseofhumanity.org
+ CONTACT_TO_EMAIL=bcharles@thehouseofhumanity.org
+ 
++# Contact-form abuse prevention
++# The site key is public and is returned to the contact form at runtime.
++TURNSTILE_SITE_KEY=replace-with-cloudflare-turnstile-site-key
++# Store the secret as a Cloudflare Worker secret, not a public variable.
++TURNSTILE_SECRET_KEY=replace-with-cloudflare-turnstile-secret
++CONTACT_FORM_REQUIRE_TURNSTILE=true
++
+ # GitHub Actions deployment secrets
+ CLOUDFLARE_API_TOKEN=replace-with-cloudflare-api-token
+ CLOUDFLARE_ACCOUNT_ID=replace-with-cloudflare-account-id
+diff --git a/index.html b/index.html
+index c532fbf..e26c490 100644
+--- a/index.html
++++ b/index.html
+@@ -214,6 +214,7 @@
+             }
+         </style>
+ 
++        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" data-thoh-turnstile async defer></script>
+         <link rel="stylesheet" href="styles.css" />
+     </head>
+     <body>
+@@ -746,6 +747,7 @@
+                                 <label for="contact-message" class="form-label">Message</label>
+                                 <textarea id="contact-message" name="Message" placeholder="Your Message" rows="5"></textarea>
+                             </div>
++                            <div class="form-group" data-turnstile-container aria-label="Security verification"></div>
+                             <div class="form-group text-center">
+                                 <button type="submit" class="btn btn-primary">Send</button>
+                             </div>
+diff --git a/lib/admin-store.ts b/lib/admin-store.ts
+index 1e494b1..df7e834 100644
+--- a/lib/admin-store.ts
++++ b/lib/admin-store.ts
+@@ -221,6 +221,42 @@ export async function createSubmission(input: Omit<ContactSubmission, "id" | "st
+   return submission;
+ }
+ 
++export async function consumeContactRateLimit(input: {
++  bucketKey: string;
++  maxRequests: number;
++  windowMs: number;
++}) {
++  await ensureSeeded();
++  const database = await getDb();
++  const now = Date.now();
++  const cutoff = now - input.windowMs;
++  const existing = await database.get<{ window_started_at: number; request_count: number }>(
++    "SELECT window_started_at, request_count FROM contact_rate_limits WHERE bucket_key = ?",
++    input.bucketKey
++  );
++
++  if (!existing || existing.window_started_at <= cutoff) {
++    await database.run(
++      "INSERT INTO contact_rate_limits (bucket_key, window_started_at, request_count) VALUES (?, ?, 1) ON CONFLICT(bucket_key) DO UPDATE SET window_started_at = excluded.window_started_at, request_count = excluded.request_count",
++      input.bucketKey, now
++    );
++    return { allowed: true, retryAfterSeconds: 0 };
++  }
++
++  if (existing.request_count >= input.maxRequests) {
++    return {
++      allowed: false,
++      retryAfterSeconds: Math.max(1, Math.ceil((existing.window_started_at + input.windowMs - now) / 1000))
++    };
++  }
++
++  await database.run(
++    "UPDATE contact_rate_limits SET request_count = request_count + 1 WHERE bucket_key = ? AND window_started_at = ?",
++    input.bucketKey, existing.window_started_at
++  );
++  return { allowed: true, retryAfterSeconds: 0 };
++}
++
+ export async function updateSubmission(id: string, action: "read" | "archive" | "restore") {
+   await ensureSeeded();
+   const database = await getDb();
+diff --git a/lib/db.ts b/lib/db.ts
+index 00da6ac..5f04ead 100644
+--- a/lib/db.ts
++++ b/lib/db.ts
+@@ -69,9 +69,11 @@ async function ensureLocalSchema(database: DatabaseClient) {
+     "CREATE TABLE IF NOT EXISTS contact_submissions (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, phone TEXT, topic TEXT NOT NULL, message TEXT NOT NULL, page_url TEXT, status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL, read_at TEXT, archived_at TEXT);" +
+     "CREATE TABLE IF NOT EXISTS activity_log (id TEXT PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT, metadata_json TEXT, created_at TEXT NOT NULL);" +
+     "CREATE TABLE IF NOT EXISTS analytics_events (id TEXT PRIMARY KEY, event_type TEXT NOT NULL, path TEXT NOT NULL, referrer TEXT, browser TEXT, device TEXT, visitor_id TEXT, metadata_json TEXT, created_at TEXT NOT NULL);" +
++    "CREATE TABLE IF NOT EXISTS contact_rate_limits (bucket_key TEXT PRIMARY KEY, window_started_at INTEGER NOT NULL, request_count INTEGER NOT NULL DEFAULT 0);" +
+     "CREATE INDEX IF NOT EXISTS idx_contact_submissions_status_created ON contact_submissions(status, created_at DESC);" +
+     "CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at DESC);" +
+-    "CREATE INDEX IF NOT EXISTS idx_analytics_events_created ON analytics_events(created_at DESC);"
++    "CREATE INDEX IF NOT EXISTS idx_analytics_events_created ON analytics_events(created_at DESC);" +
++    "CREATE INDEX IF NOT EXISTS idx_contact_rate_limits_window ON contact_rate_limits(window_started_at);"
+   );
+ }
+ 
+diff --git a/migrations/0002_contact_form_protection.sql b/migrations/0002_contact_form_protection.sql
+new file mode 100644
+index 0000000..1247cdb
+--- /dev/null
++++ b/migrations/0002_contact_form_protection.sql
+@@ -0,0 +1,8 @@
++CREATE TABLE IF NOT EXISTS contact_rate_limits (
++  bucket_key TEXT PRIMARY KEY,
++  window_started_at INTEGER NOT NULL,
++  request_count INTEGER NOT NULL DEFAULT 0
++);
++
++CREATE INDEX IF NOT EXISTS idx_contact_rate_limits_window
++  ON contact_rate_limits(window_started_at);
+diff --git a/pages/api/contact-config.ts b/pages/api/contact-config.ts
+new file mode 100644
+index 0000000..905e88d
+--- /dev/null
++++ b/pages/api/contact-config.ts
+@@ -0,0 +1,14 @@
++import type { NextApiRequest, NextApiResponse } from "next";
++import { getRuntimeEnv } from "@/lib/runtime-env";
++
++export default async function handler(request: NextApiRequest, response: NextApiResponse) {
++  if (request.method !== "GET") {
++    response.setHeader("Allow", "GET");
++    response.status(405).json({ error: "Method not allowed" });
++    return;
++  }
++  const env = await getRuntimeEnv();
++  const enabled = env.CONTACT_FORM_REQUIRE_TURNSTILE === "true" || env.NODE_ENV === "production";
++  response.setHeader("Cache-Control", "public, max-age=300, s-maxage=300");
++  response.status(200).json({ enabled, siteKey: env.TURNSTILE_SITE_KEY ?? "" });
++}
+diff --git a/pages/api/contact.ts b/pages/api/contact.ts
+index abc83c4..7a357ce 100644
+--- a/pages/api/contact.ts
++++ b/pages/api/contact.ts
+@@ -1,14 +1,92 @@
++import { createHash } from "node:crypto";
+ import type { NextApiRequest, NextApiResponse } from "next";
+-import { createSubmission, recordActivity, sendContactNotification } from "@/lib/admin-store";
++import { consumeContactRateLimit, createSubmission, recordActivity, sendContactNotification } from "@/lib/admin-store";
++import { getRuntimeEnv } from "@/lib/runtime-env";
+ 
+ function clean(value: unknown, max: number) {
+   return String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, "").trim().slice(0, max);
+ }
+ 
++function headerValue(value: string | string[] | undefined) {
++  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
++}
++
++function clientIp(request: NextApiRequest) {
++  return clean(
++    headerValue(request.headers["cf-connecting-ip"]) ||
++      headerValue(request.headers["x-forwarded-for"]).split(",")[0] ||
++      request.socket.remoteAddress || "unknown",
++    120
++  );
++}
++
++function hashIdentifier(value: string) {
++  return createHash("sha256").update(value).digest("hex").slice(0, 32);
++}
++
++function isSuspiciousMessage(topic: string, message: string) {
++  const content = (topic + "\n" + message).toLowerCase();
++  const urls = content.match(/https?:\/\/[^\s<]+/g) ?? [];
++  if (urls.length > 2) return true;
++  if (/(?:telegra\.ph|t\.me\/|wa\.me\/|bit\.ly\/|tinyurl\.com\/)/i.test(content)) return true;
++  return /(?:win|winner|won|free|claim|prize|giveaway|contest).{0,90}(?:playstation|xbox|iphone|ipad|lamborghini|ferrari|cash|money|https?:\/\/)/i.test(content);
++}
++
++async function verifyTurnstile(token: string, secret: string, ip: string) {
++  const controller = new AbortController();
++  const timeout = setTimeout(() => controller.abort(), 5000);
++  try {
++    const body = new URLSearchParams({ secret, response: token });
++    if (ip && ip !== "unknown") body.set("remoteip", ip);
++    const result = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
++      method: "POST",
++      headers: { "Content-Type": "application/x-www-form-urlencoded" },
++      body,
++      signal: controller.signal
++    });
++    if (!result.ok) return false;
++    const payload = await result.json() as { success?: boolean };
++    return payload.success === true;
++  } catch {
++    return false;
++  } finally {
++    clearTimeout(timeout);
++  }
++}
++
++export const config = { api: { bodyParser: { sizeLimit: "20kb" } } };
++
+ export default async function handler(request: NextApiRequest, response: NextApiResponse) {
+   if (request.method !== "POST") { response.setHeader("Allow", "POST"); response.status(405).json({ error: "Method not allowed" }); return; }
+-  const body = request.body as Record<string, unknown>;
++  const body = request.body && typeof request.body === "object" && !Array.isArray(request.body)
++    ? request.body as Record<string, unknown>
++    : {};
++  const env = await getRuntimeEnv();
++  const requireTurnstile = env.CONTACT_FORM_REQUIRE_TURNSTILE === "true" || env.NODE_ENV === "production";
++  const ip = clientIp(request);
++
+   if (clean(body.website, 100)) { response.status(200).json({ ok: true }); return; }
++  const startedAt = Number(body.formStartedAt);
++  if (Number.isFinite(startedAt) && Date.now() - startedAt < 2500) {
++    response.status(202).json({ ok: true });
++    return;
++  }
++
++  const turnstileToken = clean(body["cf-turnstile-response"], 4096);
++  if (requireTurnstile) {
++    if (!env.TURNSTILE_SECRET_KEY || !turnstileToken || !(await verifyTurnstile(turnstileToken, env.TURNSTILE_SECRET_KEY, ip))) {
++      response.status(403).json({ error: "Please complete the security check and try again." });
++      return;
++    }
++  }
++
++  const ipLimit = await consumeContactRateLimit({ bucketKey: "ip:" + hashIdentifier(ip || "unknown"), maxRequests: 5, windowMs: 15 * 60 * 1000 });
++  if (!ipLimit.allowed) {
++    response.setHeader("Retry-After", String(ipLimit.retryAfterSeconds));
++    response.status(429).json({ error: "Too many submissions. Please try again later." });
++    return;
++  }
++
+   const name = clean(body.Name ?? body.name, 120);
+   const email = clean(body.Email ?? body.email, 254).toLowerCase();
+   const phone = clean(body.Phone ?? body.phone, 40);
+@@ -18,6 +96,17 @@ export default async function handler(request: NextApiRequest, response: NextApi
+   if (!name || !/^\S+@\S+\.\S+$/.test(email) || !topic) {
+     response.status(400).json({ error: "Name, a valid email, and a topic are required." }); return;
+   }
++  if (isSuspiciousMessage(topic, message)) {
++    response.status(202).json({ ok: true });
++    return;
++  }
++
++  const emailLimit = await consumeContactRateLimit({ bucketKey: "email:" + hashIdentifier(email), maxRequests: 3, windowMs: 24 * 60 * 60 * 1000 });
++  if (!emailLimit.allowed) {
++    response.status(202).json({ ok: true });
++    return;
++  }
++
+   const submission = await createSubmission({ name, email, phone: phone || undefined, topic, message, pageUrl: pageUrl || undefined });
+   let delivery = { delivered: 0, mode: "not-configured" as string };
+   try { delivery = await sendContactNotification(submission); } catch { /* D1 is the system of record even if email is unavailable. */ }
+diff --git a/public/website/index.html b/public/website/index.html
+index c659de8..87eb95e 100644
+--- a/public/website/index.html
++++ b/public/website/index.html
+@@ -214,6 +214,7 @@
+             }
+         </style>
+ 
++        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" data-thoh-turnstile async defer></script>
+         <link rel="stylesheet" href="styles.css" />
+     </head>
+     <body>
+@@ -746,6 +747,7 @@
+                                 <label for="contact-message" class="form-label">Message</label>
+                                 <textarea id="contact-message" name="Message" placeholder="Your Message" rows="5"></textarea>
+                             </div>
++                            <div class="form-group" data-turnstile-container aria-label="Security verification"></div>
+                             <div class="form-group text-center">
+                                 <button type="submit" class="btn btn-primary">Send</button>
+                             </div>
+diff --git a/public/website/script.js b/public/website/script.js
+index e631622..6018beb 100644
+--- a/public/website/script.js
++++ b/public/website/script.js
+@@ -24,6 +24,67 @@ function showNotice(message, type) {
+   window.setTimeout(function () { notice.remove(); }, 6000);
+ }
+ 
++function loadTurnstileScript() {
++  if (window.turnstile) return Promise.resolve(window.turnstile);
++  if (window.__thohTurnstilePromise) return window.__thohTurnstilePromise;
++  window.__thohTurnstilePromise = new Promise(function (resolve, reject) {
++    var existing = document.querySelector('script[data-thoh-turnstile]');
++    var script = existing || document.createElement("script");
++    script.addEventListener("load", function () {
++      if (window.turnstile) resolve(window.turnstile);
++      else reject(new Error("Security verification is unavailable."));
++    }, { once: true });
++    script.addEventListener("error", function () { reject(new Error("Security verification is unavailable.")); }, { once: true });
++    if (!existing) {
++      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
++      script.async = true;
++      script.defer = true;
++      script.dataset.thohTurnstile = "true";
++      document.head.appendChild(script);
++    }
++  });
++  return window.__thohTurnstilePromise;
++}
++
++function resetContactTurnstile(form) {
++  if (window.turnstile && form.__thohTurnstileWidget !== undefined) {
++    window.turnstile.reset(form.__thohTurnstileWidget);
++  }
++  delete form.dataset.turnstileToken;
++  var button = form.querySelector('button[type="submit"]');
++  if (button && form.dataset.turnstileRequired === "true") button.disabled = true;
++}
++
++async function setupContactProtection(form) {
++  var button = form.querySelector('button[type="submit"]');
++  var container = form.querySelector("[data-turnstile-container]");
++  form.dataset.formStartedAt = String(Date.now());
++  try {
++    var configResponse = await fetch("/api/contact-config", { headers: { Accept: "application/json" } });
++    var config = await configResponse.json();
++    if (!config.enabled) {
++      if (button) button.disabled = false;
++      return;
++    }
++    form.dataset.turnstileRequired = "true";
++    if (!container || !config.siteKey) throw new Error("Security verification is not configured.");
++    if (button) button.disabled = true;
++    var turnstile = await loadTurnstileScript();
++    form.__thohTurnstileWidget = turnstile.render(container, {
++      sitekey: config.siteKey,
++      callback: function (token) {
++        form.dataset.turnstileToken = token;
++        if (button) button.disabled = false;
++      },
++      "expired-callback": function () { resetContactTurnstile(form); },
++      "error-callback": function () { resetContactTurnstile(form); }
++    });
++  } catch (error) {
++    if (button) button.disabled = true;
++    showFormMessage(form, error instanceof Error ? error.message : "Security verification is unavailable.", "error");
++  }
++}
++
+ function trackEvent(eventType, metadata) {
+   try {
+     const visitorKey = "thoh_analytics_visitor";
+@@ -103,6 +164,7 @@ function initContactForms() {
+   document.querySelectorAll("form.contact-form").forEach(function (form) {
+     const pageUrl = form.querySelector('[name="PageURL"]');
+     if (pageUrl) pageUrl.value = window.location.href;
++    void setupContactProtection(form);
+     form.addEventListener("submit", async function (event) {
+       event.preventDefault();
+       const honeypot = form.querySelector('[name="website"]');
+@@ -112,10 +174,15 @@ function initContactForms() {
+       const topic = form.querySelector('[name="Topic"]');
+       const message = form.querySelector('[name="Message"]');
+       const phone = form.querySelector('[name="Phone"]');
++      const submittedTopic = topic.value;
+       if (!name.value.trim() || !/^\S+@\S+\.\S+$/.test(email.value.trim()) || !topic.value) {
+         showFormMessage(form, "Please provide your name, a valid email, and a topic.", "error");
+         return;
+       }
++      if (form.dataset.turnstileRequired === "true" && !form.dataset.turnstileToken) {
++        showFormMessage(form, "Please complete the security check and try again.", "error");
++        return;
++      }
+       const button = form.querySelector('button[type="submit"]');
+       const original = button ? button.textContent : "Send";
+       if (button) { button.disabled = true; button.textContent = "Sending..."; }
+@@ -125,22 +192,26 @@ function initContactForms() {
+           headers: { "Content-Type": "application/json" },
+           body: JSON.stringify({
+             Name: sanitize(name.value, 120), Email: sanitize(email.value, 254), Phone: sanitize(phone ? phone.value : "", 40),
+-            Topic: sanitize(topic.value, 120), Message: sanitize(message ? message.value : "", 4000),
+-            PageURL: window.location.href, website: ""
++            Topic: sanitize(submittedTopic, 120), Message: sanitize(message ? message.value : "", 4000),
++            PageURL: window.location.href, website: "", formStartedAt: form.dataset.formStartedAt || "",
++            "cf-turnstile-response": form.dataset.turnstileToken || ""
+           })
+         });
+         const result = await response.json().catch(function () { return {}; });
+         if (!response.ok) throw new Error(result.error || "Unable to send your message.");
+         form.reset();
++        resetContactTurnstile(form);
++        form.dataset.formStartedAt = String(Date.now());
+         showFormMessage(form, "Thanks — we received your message and will follow up soon.", "success");
+         showNotice("Thanks — we received your message.", "success");
+-        trackEvent("contact_form_submit", { topic: topic.value });
++        trackEvent("contact_form_submit", { topic: submittedTopic });
+       } catch (error) {
+         const messageText = error instanceof Error ? error.message : "Unable to send your message.";
+         showFormMessage(form, messageText, "error");
+         showNotice(messageText, "error");
+       } finally {
+-        if (button) { button.disabled = false; button.textContent = original; }
++        if (form.dataset.turnstileRequired === "true") resetContactTurnstile(form);
++        if (button) { button.disabled = form.dataset.turnstileRequired === "true"; button.textContent = original; }
+       }
+     });
+   });
+diff --git a/script.js b/script.js
+index e631622..6018beb 100644
+--- a/script.js
++++ b/script.js
+@@ -24,6 +24,67 @@ function showNotice(message, type) {
+   window.setTimeout(function () { notice.remove(); }, 6000);
+ }
+ 
++function loadTurnstileScript() {
++  if (window.turnstile) return Promise.resolve(window.turnstile);
++  if (window.__thohTurnstilePromise) return window.__thohTurnstilePromise;
++  window.__thohTurnstilePromise = new Promise(function (resolve, reject) {
++    var existing = document.querySelector('script[data-thoh-turnstile]');
++    var script = existing || document.createElement("script");
++    script.addEventListener("load", function () {
++      if (window.turnstile) resolve(window.turnstile);
++      else reject(new Error("Security verification is unavailable."));
++    }, { once: true });
++    script.addEventListener("error", function () { reject(new Error("Security verification is unavailable.")); }, { once: true });
++    if (!existing) {
++      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
++      script.async = true;
++      script.defer = true;
++      script.dataset.thohTurnstile = "true";
++      document.head.appendChild(script);
++    }
++  });
++  return window.__thohTurnstilePromise;
++}
++
++function resetContactTurnstile(form) {
++  if (window.turnstile && form.__thohTurnstileWidget !== undefined) {
++    window.turnstile.reset(form.__thohTurnstileWidget);
++  }
++  delete form.dataset.turnstileToken;
++  var button = form.querySelector('button[type="submit"]');
++  if (button && form.dataset.turnstileRequired === "true") button.disabled = true;
++}
++
++async function setupContactProtection(form) {
++  var button = form.querySelector('button[type="submit"]');
++  var container = form.querySelector("[data-turnstile-container]");
++  form.dataset.formStartedAt = String(Date.now());
++  try {
++    var configResponse = await fetch("/api/contact-config", { headers: { Accept: "application/json" } });
++    var config = await configResponse.json();
++    if (!config.enabled) {
++      if (button) button.disabled = false;
++      return;
++    }
++    form.dataset.turnstileRequired = "true";
++    if (!container || !config.siteKey) throw new Error("Security verification is not configured.");
++    if (button) button.disabled = true;
++    var turnstile = await loadTurnstileScript();
++    form.__thohTurnstileWidget = turnstile.render(container, {
++      sitekey: config.siteKey,
++      callback: function (token) {
++        form.dataset.turnstileToken = token;
++        if (button) button.disabled = false;
++      },
++      "expired-callback": function () { resetContactTurnstile(form); },
++      "error-callback": function () { resetContactTurnstile(form); }
++    });
++  } catch (error) {
++    if (button) button.disabled = true;
++    showFormMessage(form, error instanceof Error ? error.message : "Security verification is unavailable.", "error");
++  }
++}
++
+ function trackEvent(eventType, metadata) {
+   try {
+     const visitorKey = "thoh_analytics_visitor";
+@@ -103,6 +164,7 @@ function initContactForms() {
+   document.querySelectorAll("form.contact-form").forEach(function (form) {
+     const pageUrl = form.querySelector('[name="PageURL"]');
+     if (pageUrl) pageUrl.value = window.location.href;
++    void setupContactProtection(form);
+     form.addEventListener("submit", async function (event) {
+       event.preventDefault();
+       const honeypot = form.querySelector('[name="website"]');
+@@ -112,10 +174,15 @@ function initContactForms() {
+       const topic = form.querySelector('[name="Topic"]');
+       const message = form.querySelector('[name="Message"]');
+       const phone = form.querySelector('[name="Phone"]');
++      const submittedTopic = topic.value;
+       if (!name.value.trim() || !/^\S+@\S+\.\S+$/.test(email.value.trim()) || !topic.value) {
+         showFormMessage(form, "Please provide your name, a valid email, and a topic.", "error");
+         return;
+       }
++      if (form.dataset.turnstileRequired === "true" && !form.dataset.turnstileToken) {
++        showFormMessage(form, "Please complete the security check and try again.", "error");
++        return;
++      }
+       const button = form.querySelector('button[type="submit"]');
+       const original = button ? button.textContent : "Send";
+       if (button) { button.disabled = true; button.textContent = "Sending..."; }
+@@ -125,22 +192,26 @@ function initContactForms() {
+           headers: { "Content-Type": "application/json" },
+           body: JSON.stringify({
+             Name: sanitize(name.value, 120), Email: sanitize(email.value, 254), Phone: sanitize(phone ? phone.value : "", 40),
+-            Topic: sanitize(topic.value, 120), Message: sanitize(message ? message.value : "", 4000),
+-            PageURL: window.location.href, website: ""
++            Topic: sanitize(submittedTopic, 120), Message: sanitize(message ? message.value : "", 4000),
++            PageURL: window.location.href, website: "", formStartedAt: form.dataset.formStartedAt || "",
++            "cf-turnstile-response": form.dataset.turnstileToken || ""
+           })
+         });
+         const result = await response.json().catch(function () { return {}; });
+         if (!response.ok) throw new Error(result.error || "Unable to send your message.");
+         form.reset();
++        resetContactTurnstile(form);
++        form.dataset.formStartedAt = String(Date.now());
+         showFormMessage(form, "Thanks — we received your message and will follow up soon.", "success");
+         showNotice("Thanks — we received your message.", "success");
+-        trackEvent("contact_form_submit", { topic: topic.value });
++        trackEvent("contact_form_submit", { topic: submittedTopic });
+       } catch (error) {
+         const messageText = error instanceof Error ? error.message : "Unable to send your message.";
+         showFormMessage(form, messageText, "error");
+         showNotice(messageText, "error");
+       } finally {
+-        if (button) { button.disabled = false; button.textContent = original; }
++        if (form.dataset.turnstileRequired === "true") resetContactTurnstile(form);
++        if (button) { button.disabled = form.dataset.turnstileRequired === "true"; button.textContent = original; }
+       }
+     });
+   });
+diff --git a/worker/index.ts b/worker/index.ts
+index 13e23f6..8084c16 100644
+--- a/worker/index.ts
++++ b/worker/index.ts
+@@ -16,7 +16,7 @@ function withSecurityHeaders(response: Response) {
+   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+   headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+   headers.set("Cross-Origin-Opener-Policy", "same-origin");
+-  headers.set("Content-Security-Policy-Report-Only", "default-src 'self'; script-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://api.resend.com; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'");
++  headers.set("Content-Security-Policy-Report-Only", "default-src 'self'; script-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://api.resend.com https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'");
+   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+ }
+ 
+diff --git a/wrangler.jsonc b/wrangler.jsonc
+index 144d1e8..e253a16 100644
+--- a/wrangler.jsonc
++++ b/wrangler.jsonc
+@@ -30,6 +30,8 @@
+   "vars": {
+     "ADMIN_BASE_URL": "https://thehouseofhumanity.org",
+     "NEXT_PUBLIC_SITE_URL": "https://thehouseofhumanity.org",
+-    "ALLOW_LOCAL_ADMIN_LOGIN": "false"
++    "ALLOW_LOCAL_ADMIN_LOGIN": "false",
++    "TURNSTILE_SITE_KEY": "replace-with-cloudflare-turnstile-site-key",
++    "CONTACT_FORM_REQUIRE_TURNSTILE": "true"
+   }
+ }
+-- 
+2.51.1
+
+
+From 2e96f89bbbcef41dc636c2c6bec35c4ce55a2bfd Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Thu, 24 Sep 2026 22:58:31 -0400
+Subject: [PATCH 2/2] feat: protect public forms with Turnstile
+
+---
+ index.html                  |  1 +
+ lib/turnstile.ts            | 46 +++++++++++++++++++++++++++++++++++++
+ pages/api/contact-config.ts |  3 ++-
+ pages/api/contact.ts        | 42 +++------------------------------
+ public/sw.js                |  4 ++--
+ public/website/index.html   |  1 +
+ public/website/script.js    | 23 ++++++++++---------
+ script.js                   | 23 ++++++++++---------
+ sw.js                       |  2 +-
+ 9 files changed, 80 insertions(+), 65 deletions(-)
+ create mode 100644 lib/turnstile.ts
+
+diff --git a/index.html b/index.html
+index e26c490..42b825a 100644
+--- a/index.html
++++ b/index.html
+@@ -678,6 +678,7 @@
+                         <form
+                             id="contactForm"
+                             class="contact-form"
++                            data-turnstile-form
+                             action="/api/contact"
+                             method="POST"
+                             novalidate
+diff --git a/lib/turnstile.ts b/lib/turnstile.ts
+new file mode 100644
+index 0000000..cf469b9
+--- /dev/null
++++ b/lib/turnstile.ts
+@@ -0,0 +1,46 @@
++import type { NextApiRequest } from "next";
++import { getRuntimeEnv } from "@/lib/runtime-env";
++
++function headerValue(value: string | string[] | undefined) {
++  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
++}
++
++export function clientIp(request: NextApiRequest) {
++  return (headerValue(request.headers["cf-connecting-ip"]) ||
++    headerValue(request.headers["x-forwarded-for"]).split(",")[0] ||
++    request.socket.remoteAddress ||
++    "unknown").trim().slice(0, 120);
++}
++
++export async function isTurnstileEnabled() {
++  const env = await getRuntimeEnv();
++  return env.CONTACT_FORM_REQUIRE_TURNSTILE === "true" || env.NODE_ENV === "production";
++}
++
++export async function verifyTurnstileToken(token: string, request: NextApiRequest) {
++  const env = await getRuntimeEnv();
++  const secret = env.TURNSTILE_SECRET_KEY;
++  if (!secret || !token) return false;
++
++  const ip = clientIp(request);
++  const body = new URLSearchParams({ secret, response: token });
++  if (ip && ip !== "unknown") body.set("remoteip", ip);
++
++  const controller = new AbortController();
++  const timeout = setTimeout(() => controller.abort(), 5000);
++  try {
++    const result = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
++      method: "POST",
++      headers: { "Content-Type": "application/x-www-form-urlencoded" },
++      body,
++      signal: controller.signal
++    });
++    if (!result.ok) return false;
++    const payload = await result.json() as { success?: boolean };
++    return payload.success === true;
++  } catch {
++    return false;
++  } finally {
++    clearTimeout(timeout);
++  }
++}
+diff --git a/pages/api/contact-config.ts b/pages/api/contact-config.ts
+index 905e88d..85c480c 100644
+--- a/pages/api/contact-config.ts
++++ b/pages/api/contact-config.ts
+@@ -1,5 +1,6 @@
+ import type { NextApiRequest, NextApiResponse } from "next";
+ import { getRuntimeEnv } from "@/lib/runtime-env";
++import { isTurnstileEnabled } from "@/lib/turnstile";
+ 
+ export default async function handler(request: NextApiRequest, response: NextApiResponse) {
+   if (request.method !== "GET") {
+@@ -8,7 +9,7 @@ export default async function handler(request: NextApiRequest, response: NextApi
+     return;
+   }
+   const env = await getRuntimeEnv();
+-  const enabled = env.CONTACT_FORM_REQUIRE_TURNSTILE === "true" || env.NODE_ENV === "production";
++  const enabled = await isTurnstileEnabled();
+   response.setHeader("Cache-Control", "public, max-age=300, s-maxage=300");
+   response.status(200).json({ enabled, siteKey: env.TURNSTILE_SITE_KEY ?? "" });
+ }
+diff --git a/pages/api/contact.ts b/pages/api/contact.ts
+index 7a357ce..1608dc5 100644
+--- a/pages/api/contact.ts
++++ b/pages/api/contact.ts
+@@ -1,25 +1,12 @@
+ import { createHash } from "node:crypto";
+ import type { NextApiRequest, NextApiResponse } from "next";
+ import { consumeContactRateLimit, createSubmission, recordActivity, sendContactNotification } from "@/lib/admin-store";
+-import { getRuntimeEnv } from "@/lib/runtime-env";
++import { clientIp, isTurnstileEnabled, verifyTurnstileToken } from "@/lib/turnstile";
+ 
+ function clean(value: unknown, max: number) {
+   return String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, "").trim().slice(0, max);
+ }
+ 
+-function headerValue(value: string | string[] | undefined) {
+-  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+-}
+-
+-function clientIp(request: NextApiRequest) {
+-  return clean(
+-    headerValue(request.headers["cf-connecting-ip"]) ||
+-      headerValue(request.headers["x-forwarded-for"]).split(",")[0] ||
+-      request.socket.remoteAddress || "unknown",
+-    120
+-  );
+-}
+-
+ function hashIdentifier(value: string) {
+   return createHash("sha256").update(value).digest("hex").slice(0, 32);
+ }
+@@ -32,28 +19,6 @@ function isSuspiciousMessage(topic: string, message: string) {
+   return /(?:win|winner|won|free|claim|prize|giveaway|contest).{0,90}(?:playstation|xbox|iphone|ipad|lamborghini|ferrari|cash|money|https?:\/\/)/i.test(content);
+ }
+ 
+-async function verifyTurnstile(token: string, secret: string, ip: string) {
+-  const controller = new AbortController();
+-  const timeout = setTimeout(() => controller.abort(), 5000);
+-  try {
+-    const body = new URLSearchParams({ secret, response: token });
+-    if (ip && ip !== "unknown") body.set("remoteip", ip);
+-    const result = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+-      method: "POST",
+-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+-      body,
+-      signal: controller.signal
+-    });
+-    if (!result.ok) return false;
+-    const payload = await result.json() as { success?: boolean };
+-    return payload.success === true;
+-  } catch {
+-    return false;
+-  } finally {
+-    clearTimeout(timeout);
+-  }
+-}
+-
+ export const config = { api: { bodyParser: { sizeLimit: "20kb" } } };
+ 
+ export default async function handler(request: NextApiRequest, response: NextApiResponse) {
+@@ -61,8 +26,7 @@ export default async function handler(request: NextApiRequest, response: NextApi
+   const body = request.body && typeof request.body === "object" && !Array.isArray(request.body)
+     ? request.body as Record<string, unknown>
+     : {};
+-  const env = await getRuntimeEnv();
+-  const requireTurnstile = env.CONTACT_FORM_REQUIRE_TURNSTILE === "true" || env.NODE_ENV === "production";
++  const requireTurnstile = await isTurnstileEnabled();
+   const ip = clientIp(request);
+ 
+   if (clean(body.website, 100)) { response.status(200).json({ ok: true }); return; }
+@@ -74,7 +38,7 @@ export default async function handler(request: NextApiRequest, response: NextApi
+ 
+   const turnstileToken = clean(body["cf-turnstile-response"], 4096);
+   if (requireTurnstile) {
+-    if (!env.TURNSTILE_SECRET_KEY || !turnstileToken || !(await verifyTurnstile(turnstileToken, env.TURNSTILE_SECRET_KEY, ip))) {
++    if (!turnstileToken || !(await verifyTurnstileToken(turnstileToken, request))) {
+       response.status(403).json({ error: "Please complete the security check and try again." });
+       return;
+     }
+diff --git a/public/sw.js b/public/sw.js
+index f643ec9..7c438a0 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -1,7 +1,7 @@
+ // Service Worker for The House of Humanity
+ // Provides offline functionality and caching for better performance
+ 
+-const CACHE_NAME = 'thoh-v1.5';
++const CACHE_NAME = 'thoh-v1.6';
+ const CORE_ASSETS = [
+     '/website/index.html',
+     '/website/contact-us.html',
+@@ -83,4 +83,4 @@ self.addEventListener('activate', (event) => {
+             self.clients.claim();
+         })()
+     );
+-});
+\ No newline at end of file
++});
+diff --git a/public/website/index.html b/public/website/index.html
+index 87eb95e..3644a78 100644
+--- a/public/website/index.html
++++ b/public/website/index.html
+@@ -678,6 +678,7 @@
+                         <form
+                             id="contactForm"
+                             class="contact-form"
++                            data-turnstile-form
+                             action="/api/contact"
+                             method="POST"
+                             novalidate
+diff --git a/public/website/script.js b/public/website/script.js
+index 6018beb..dad3876 100644
+--- a/public/website/script.js
++++ b/public/website/script.js
+@@ -5,7 +5,7 @@ function sanitize(value, maxLength) {
+ }
+ 
+ function showFormMessage(form, message, type) {
+-  const region = form.querySelector("#formMessage");
++  const region = form.querySelector("[data-form-message], #formMessage");
+   if (!region) return;
+   region.textContent = message;
+   region.dataset.type = type || "info";
+@@ -46,7 +46,7 @@ function loadTurnstileScript() {
+   return window.__thohTurnstilePromise;
+ }
+ 
+-function resetContactTurnstile(form) {
++function resetTurnstile(form) {
+   if (window.turnstile && form.__thohTurnstileWidget !== undefined) {
+     window.turnstile.reset(form.__thohTurnstileWidget);
+   }
+@@ -55,7 +55,7 @@ function resetContactTurnstile(form) {
+   if (button && form.dataset.turnstileRequired === "true") button.disabled = true;
+ }
+ 
+-async function setupContactProtection(form) {
++async function setupTurnstileProtection(form) {
+   var button = form.querySelector('button[type="submit"]');
+   var container = form.querySelector("[data-turnstile-container]");
+   form.dataset.formStartedAt = String(Date.now());
+@@ -76,8 +76,8 @@ async function setupContactProtection(form) {
+         form.dataset.turnstileToken = token;
+         if (button) button.disabled = false;
+       },
+-      "expired-callback": function () { resetContactTurnstile(form); },
+-      "error-callback": function () { resetContactTurnstile(form); }
++      "expired-callback": function () { resetTurnstile(form); },
++      "error-callback": function () { resetTurnstile(form); }
+     });
+   } catch (error) {
+     if (button) button.disabled = true;
+@@ -160,11 +160,12 @@ function initNavigation() {
+   });
+ }
+ 
+-function initContactForms() {
+-  document.querySelectorAll("form.contact-form").forEach(function (form) {
++function initPublicForms() {
++  document.querySelectorAll("form[data-turnstile-form]").forEach(function (form) {
++    void setupTurnstileProtection(form);
++    if (!form.matches("form.contact-form")) return;
+     const pageUrl = form.querySelector('[name="PageURL"]');
+     if (pageUrl) pageUrl.value = window.location.href;
+-    void setupContactProtection(form);
+     form.addEventListener("submit", async function (event) {
+       event.preventDefault();
+       const honeypot = form.querySelector('[name="website"]');
+@@ -200,7 +201,7 @@ function initContactForms() {
+         const result = await response.json().catch(function () { return {}; });
+         if (!response.ok) throw new Error(result.error || "Unable to send your message.");
+         form.reset();
+-        resetContactTurnstile(form);
++        resetTurnstile(form);
+         form.dataset.formStartedAt = String(Date.now());
+         showFormMessage(form, "Thanks — we received your message and will follow up soon.", "success");
+         showNotice("Thanks — we received your message.", "success");
+@@ -210,7 +211,7 @@ function initContactForms() {
+         showFormMessage(form, messageText, "error");
+         showNotice(messageText, "error");
+       } finally {
+-        if (form.dataset.turnstileRequired === "true") resetContactTurnstile(form);
++        if (form.dataset.turnstileRequired === "true") resetTurnstile(form);
+         if (button) { button.disabled = form.dataset.turnstileRequired === "true"; button.textContent = original; }
+       }
+     });
+@@ -229,7 +230,7 @@ function initAnalytics() {
+ 
+ document.addEventListener("DOMContentLoaded", function () {
+   initNavigation();
+-  initContactForms();
++  initPublicForms();
+   initAnalytics();
+   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(function () {});
+ });
+diff --git a/script.js b/script.js
+index 6018beb..dad3876 100644
+--- a/script.js
++++ b/script.js
+@@ -5,7 +5,7 @@ function sanitize(value, maxLength) {
+ }
+ 
+ function showFormMessage(form, message, type) {
+-  const region = form.querySelector("#formMessage");
++  const region = form.querySelector("[data-form-message], #formMessage");
+   if (!region) return;
+   region.textContent = message;
+   region.dataset.type = type || "info";
+@@ -46,7 +46,7 @@ function loadTurnstileScript() {
+   return window.__thohTurnstilePromise;
+ }
+ 
+-function resetContactTurnstile(form) {
++function resetTurnstile(form) {
+   if (window.turnstile && form.__thohTurnstileWidget !== undefined) {
+     window.turnstile.reset(form.__thohTurnstileWidget);
+   }
+@@ -55,7 +55,7 @@ function resetContactTurnstile(form) {
+   if (button && form.dataset.turnstileRequired === "true") button.disabled = true;
+ }
+ 
+-async function setupContactProtection(form) {
++async function setupTurnstileProtection(form) {
+   var button = form.querySelector('button[type="submit"]');
+   var container = form.querySelector("[data-turnstile-container]");
+   form.dataset.formStartedAt = String(Date.now());
+@@ -76,8 +76,8 @@ async function setupContactProtection(form) {
+         form.dataset.turnstileToken = token;
+         if (button) button.disabled = false;
+       },
+-      "expired-callback": function () { resetContactTurnstile(form); },
+-      "error-callback": function () { resetContactTurnstile(form); }
++      "expired-callback": function () { resetTurnstile(form); },
++      "error-callback": function () { resetTurnstile(form); }
+     });
+   } catch (error) {
+     if (button) button.disabled = true;
+@@ -160,11 +160,12 @@ function initNavigation() {
+   });
+ }
+ 
+-function initContactForms() {
+-  document.querySelectorAll("form.contact-form").forEach(function (form) {
++function initPublicForms() {
++  document.querySelectorAll("form[data-turnstile-form]").forEach(function (form) {
++    void setupTurnstileProtection(form);
++    if (!form.matches("form.contact-form")) return;
+     const pageUrl = form.querySelector('[name="PageURL"]');
+     if (pageUrl) pageUrl.value = window.location.href;
+-    void setupContactProtection(form);
+     form.addEventListener("submit", async function (event) {
+       event.preventDefault();
+       const honeypot = form.querySelector('[name="website"]');
+@@ -200,7 +201,7 @@ function initContactForms() {
+         const result = await response.json().catch(function () { return {}; });
+         if (!response.ok) throw new Error(result.error || "Unable to send your message.");
+         form.reset();
+-        resetContactTurnstile(form);
++        resetTurnstile(form);
+         form.dataset.formStartedAt = String(Date.now());
+         showFormMessage(form, "Thanks — we received your message and will follow up soon.", "success");
+         showNotice("Thanks — we received your message.", "success");
+@@ -210,7 +211,7 @@ function initContactForms() {
+         showFormMessage(form, messageText, "error");
+         showNotice(messageText, "error");
+       } finally {
+-        if (form.dataset.turnstileRequired === "true") resetContactTurnstile(form);
++        if (form.dataset.turnstileRequired === "true") resetTurnstile(form);
+         if (button) { button.disabled = form.dataset.turnstileRequired === "true"; button.textContent = original; }
+       }
+     });
+@@ -229,7 +230,7 @@ function initAnalytics() {
+ 
+ document.addEventListener("DOMContentLoaded", function () {
+   initNavigation();
+-  initContactForms();
++  initPublicForms();
+   initAnalytics();
+   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(function () {});
+ });
+diff --git a/sw.js b/sw.js
+index 166f3ae..7c438a0 100644
+--- a/sw.js
++++ b/sw.js
+@@ -1,7 +1,7 @@
+ // Service Worker for The House of Humanity
+ // Provides offline functionality and caching for better performance
+ 
+-const CACHE_NAME = 'thoh-v1.5';
++const CACHE_NAME = 'thoh-v1.6';
+ const CORE_ASSETS = [
+     '/website/index.html',
+     '/website/contact-us.html',
+-- 
+2.51.1
+
