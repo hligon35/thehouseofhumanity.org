@@ -6,7 +6,7 @@ export async function getRuntimeEnv(): Promise<RuntimeEnv> {
   const values: RuntimeEnv = { ...process.env };
   try {
     const { env } = await getCloudflareContext({ async: true });
-    for (const [key, value] of Object.entries(env as Record<string, unknown>)) {
+    for (const [key, value] of Object.entries(env as unknown as Record<string, unknown>)) {
       if (typeof value === "string") values[key] = value;
     }
   } catch {

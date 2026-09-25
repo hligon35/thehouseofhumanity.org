@@ -23,13 +23,30 @@
     {
       "binding": "DASHBOARD_DB",
       "database_name": "thoh-dashboard",
-      "database_id": "7314a6a5-c902-4b08-8ea3-4d951435d9f3",
+      "database_id": "45724cc1-aa7d-43d4-b3bd-0b78a3a6fd42",
       "migrations_dir": "migrations"
     }
   ],
   "vars": {
     "ADMIN_BASE_URL": "https://thehouseofhumanity.org",
     "NEXT_PUBLIC_SITE_URL": "https://thehouseofhumanity.org",
-    "ALLOW_LOCAL_ADMIN_LOGIN": "false"
+    "ALLOW_LOCAL_ADMIN_LOGIN": "false",
+    "CF_ACCESS_TEAM_DOMAIN": "getsparqd-server.cloudflareaccess.com",
+    "CF_ACCESS_AUD": "a9e0f3e69dfc87b96a5b526e50be67584e88ec61176c9f7345de700cba482a04",
+    "GOOGLE_CLIENT_ID": "735755043015-8u39d4q9sam2k353kpkfj9ldohmmkdiu.apps.googleusercontent.com",
+    "ADMIN_ALLOWED_EMAILS": "hligon@getsparqd.com, bcharles@thehouseofhumanity.org, secretary@thehouseofhumanity.org, housingcoord@thehouseofhumanity.org, treasurer@thehouseofhumanity.org, eventcoord@thehouseofhumanity.org"
+  },
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true
+    }
   }
 }

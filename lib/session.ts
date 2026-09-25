@@ -5,7 +5,8 @@ import type { AdminPrincipal } from "@/lib/types";
 
 const SESSION_COOKIE = "thoh_admin_session";
 const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
-type SessionPayload = { username: string; expiresAt: number };
+type SessionAuthType = "local" | "google";
+type SessionPayload = { username: string; expiresAt: number; authType: SessionAuthType };
 type RequestWithHeaders = Pick<NextApiRequest, "headers"> | NextPageContext["req"];
 
 function getHeader(request: RequestWithHeaders, name: string) {
@@ -69,6 +70,40 @@ function decodeJsonPart(value: string) {
   return JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Record<string, unknown>;
 }
 
+export async function verifyGoogleIdToken(token: string): Promise<{ email: string } | null> {
+  const env = await getRuntimeEnv();
+  const clientId = env.GOOGLE_CLIENT_ID;
+  if (!clientId || !globalThis.crypto?.subtle) return null;
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const header = decodeJsonPart(parts[0]);
+    const payload = decodeJsonPart(parts[1]);
+    const keysResponse = await fetch("https://www.googleapis.com/oauth2/v3/certs");
+    if (!keysResponse.ok) return null;
+    const keySet = await keysResponse.json() as { keys?: Array<Record<string, unknown>> };
+    const jwk = keySet.keys?.find((key) => key.kid === header.kid);
+    if (!jwk) return null;
+    const key = await globalThis.crypto.subtle.importKey(
+      "jwk", jwk as JsonWebKey, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]
+    );
+    const signingInput = new TextEncoder().encode(parts[0] + "." + parts[1]);
+    const signature = Uint8Array.from(Buffer.from(parts[2], "base64url"));
+    const valid = await globalThis.crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, signature, signingInput);
+    const exp = typeof payload.exp === "number" ? payload.exp * 1000 : 0;
+    const iss = typeof payload.iss === "string" ? payload.iss : "";
+    const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
+    const emailVerified = payload.email_verified === true || payload.email_verified === "true";
+    const validIssuer = iss === "https://accounts.google.com" || iss === "accounts.google.com";
+    if (!valid || exp <= Date.now() || !validIssuer || !emailVerified || payload.aud !== clientId || !email) return null;
+    const allowed = allowedAccessEmails(env);
+    if (allowed.length && !allowed.includes(email)) return null;
+    return { email };
+  } catch {
+    return null;
+  }
+}
+
 async function validateAccessAssertion(token: string, env: Record<string, string | undefined>) {
   const teamDomain = env.CF_ACCESS_TEAM_DOMAIN?.replace(/\/$/, "");
   const audience = env.CF_ACCESS_AUD;
@@ -103,14 +138,16 @@ export async function getAdminIdentity(request: RequestWithHeaders): Promise<Adm
   const accessAssertion = getHeader(request, "cf-access-jwt-assertion");
   if (accessEmail) {
     const configuredJwtValidation = Boolean(env.CF_ACCESS_TEAM_DOMAIN && env.CF_ACCESS_AUD);
-    if (configuredJwtValidation && (!accessAssertion || !(await validateAccessAssertion(accessAssertion, env)))) return null;
+    if (configuredJwtValidation && !accessAssertion) return null;
+    if (configuredJwtValidation && !(await validateAccessAssertion(accessAssertion as string, env))) return null;
     const allowed = allowedAccessEmails(env);
     if (allowed.length && !allowed.includes(accessEmail)) return null;
     return { username: accessEmail, email: accessEmail, authType: "cloudflare-access" };
   }
-  if (!(await isLocalAdminLoginEnabled())) return null;
   const session = getSessionFromRequest(request);
-  return session ? { username: session.username, email: session.username, authType: "local" } : null;
+  if (!session) return null;
+  if (session.authType === "local" && !(await isLocalAdminLoginEnabled())) return null;
+  return { username: session.username, email: session.username, authType: session.authType };
 }
 
 export async function requireApiSession(request: NextApiRequest, response: NextApiResponse) {
@@ -122,11 +159,11 @@ export async function requireApiSession(request: NextApiRequest, response: NextA
   return principal;
 }
 
-export function setSessionCookie(response: NextApiResponse, username: string) {
+export function setSessionCookie(response: NextApiResponse, username: string, authType: SessionAuthType = "local") {
   const secure = process.env.NODE_ENV === "production" ? " Secure;" : "";
   response.setHeader(
     "Set-Cookie",
-    SESSION_COOKIE + "=" + encodePayload({ username, expiresAt: Date.now() + SESSION_TTL_MS }) +
+    SESSION_COOKIE + "=" + encodePayload({ username, authType, expiresAt: Date.now() + SESSION_TTL_MS }) +
       "; Path=/; HttpOnly; SameSite=Lax;" + secure + " Max-Age=" + SESSION_TTL_MS / 1000
   );
 }

@@ -1,24 +1,40 @@
 import Head from "next/head";
 import Image from "next/image";
+import Script from "next/script";
 import type { GetServerSideProps } from "next";
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   getDashboardData
 } from "@/lib/admin-store";
 import {
   getAdminIdentity, getLocalAdminUsername, isLocalAdminLoginEnabled
 } from "@/lib/session";
+import { getRuntimeEnv } from "@/lib/runtime-env";
 import type {
   ActivityEvent, AdminData, ContactSubmission, NewsletterQueueItem, SiteEditorContent, SubmissionStatus
 } from "@/lib/types";
 
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (config: { client_id: string; callback: (response: { credential: string }) => void }) => void;
+          renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
+        };
+      };
+    };
+  }
+}
+
 type Tab = "overview" | "submissions" | "newsletter" | "content" | "activity" | "help";
 type Props = {
   authenticated: boolean;
-  principal: { username: string; email: string; authType: "cloudflare-access" | "local" } | null;
+  principal: { username: string; email: string; authType: "cloudflare-access" | "local" | "google" } | null;
   data: AdminData | null;
   localLoginEnabled: boolean;
   localUsername: string;
+  googleClientId: string;
 };
 
 function localInput(iso?: string) {
@@ -42,7 +58,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init
   });
-  const payload = await response.json().catch(() => ({}));
+  const payload = (await response.json().catch(() => ({}))) as { error?: unknown };
   if (!response.ok) {
     const message = typeof payload?.error === "string" ? payload.error : "Request failed.";
     throw new Error(message);
@@ -54,11 +70,12 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="thoh-field"><span>{label}</span>{children}</label>;
 }
 
-function Login({ localLoginEnabled, localUsername }: { localLoginEnabled: boolean; localUsername: string }) {
+function Login({ localLoginEnabled, localUsername, googleClientId }: { localLoginEnabled: boolean; localUsername: string; googleClientId: string }) {
   const [username, setUsername] = useState(localUsername);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const googleButtonRef = useRef<HTMLDivElement>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -73,34 +90,55 @@ function Login({ localLoginEnabled, localUsername }: { localLoginEnabled: boolea
     }
   }
 
+  async function handleGoogleCredential(response: { credential: string }) {
+    setError("");
+    try {
+      await requestJson("/api/auth/google", { method: "POST", body: JSON.stringify({ credential: response.credential }) });
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to sign in with Google.");
+    }
+  }
+
+  function initializeGoogleButton() {
+    if (!googleClientId || !googleButtonRef.current || !window.google?.accounts?.id) return;
+    window.google.accounts.id.initialize({ client_id: googleClientId, callback: handleGoogleCredential });
+    window.google.accounts.id.renderButton(googleButtonRef.current, { theme: "outline", size: "large", width: 260 });
+  }
+
+  useEffect(() => {
+    if (window.google?.accounts?.id) initializeGoogleButton();
+  }, [googleClientId]);
+
   return (
     <main className="thoh-login-shell">
+      {googleClientId ? (
+        <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" onLoad={initializeGoogleButton} />
+      ) : null}
       <section className="thoh-login-card">
         <Image src="/website/images/THOHlogo.png" alt="The House of Humanity" width={92} height={92} priority />
         <p className="thoh-kicker">Secure administration</p>
         <h1>The House of Humanity</h1>
-        <p className="thoh-muted">
-          {localLoginEnabled ? "Use local development credentials or the Cloudflare Access sign-in protecting this route." : "This dashboard is protected by Cloudflare Access. Sign in with the approved identity provider, then return to this address."}
-        </p>
+        <p className="thoh-muted">Sign in with your approved Google account to access the dashboard.</p>
+        {error ? <p className="thoh-alert thoh-alert--error">{error}</p> : null}
+        {googleClientId ? (
+          <div ref={googleButtonRef} className="thoh-google-signin" />
+        ) : (
+          <div className="thoh-access-note"><strong>Google sign-in is not configured</strong><p>Set GOOGLE_CLIENT_ID to enable sign-in.</p></div>
+        )}
         {localLoginEnabled ? (
           <form className="thoh-form" onSubmit={submit}>
             <Field label="Username"><input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></Field>
             <Field label="Password"><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></Field>
-            {error ? <p className="thoh-alert thoh-alert--error">{error}</p> : null}
             <button className="thoh-button thoh-button--primary" disabled={loading}>{loading ? "Signing in..." : "Sign in locally"}</button>
           </form>
-        ) : (
-          <div className="thoh-access-note">
-            <strong>Cloudflare Access is required</strong>
-            <p>Configure an Access application for <code>/admin*</code> and <code>/api/*</code>, with the approved Google or other identity provider.</p>
-          </div>
-        )}
+        ) : null}
       </section>
     </main>
   );
 }
 
-export default function AdminPage({ authenticated, principal, data, localLoginEnabled, localUsername }: Props) {
+export default function AdminPage({ authenticated, principal, data, localLoginEnabled, localUsername, googleClientId }: Props) {
   const [dashboard, setDashboard] = useState<AdminData | null>(data);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [status, setStatus] = useState("");
@@ -124,7 +162,7 @@ export default function AdminPage({ authenticated, principal, data, localLoginEn
   }, [dashboard?.submissions, submissionFilter, submissionQuery]);
 
   if (!authenticated || !principal || !dashboard || !draft) {
-    return <Login localLoginEnabled={localLoginEnabled} localUsername={localUsername} />;
+    return <Login localLoginEnabled={localLoginEnabled} localUsername={localUsername} googleClientId={googleClientId} />;
   }
 
   function showSuccess(message: string) { setStatus(message); setError(""); }
@@ -333,6 +371,7 @@ export const getServerSideProps: GetServerSideProps<Props> = async (context) => 
   const principal = await getAdminIdentity(context.req);
   const localLoginEnabled = await isLocalAdminLoginEnabled();
   const localUsername = await getLocalAdminUsername();
-  if (!principal) return { props: { authenticated: false, principal: null, data: null, localLoginEnabled, localUsername } };
-  return { props: { authenticated: true, principal, data: await getDashboardData(), localLoginEnabled, localUsername } };
+  const googleClientId = (await getRuntimeEnv()).GOOGLE_CLIENT_ID ?? "";
+  if (!principal) return { props: { authenticated: false, principal: null, data: null, localLoginEnabled, localUsername, googleClientId } };
+  return { props: { authenticated: true, principal, data: await getDashboardData(), localLoginEnabled, localUsername, googleClientId } };
 };

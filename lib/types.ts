@@ -106,7 +106,7 @@ export type SiteContentRecord = {
 export type AdminPrincipal = {
   username: string;
   email: string;
-  authType: "cloudflare-access" | "local";
+  authType: "cloudflare-access" | "local" | "google";
 };
 
 export type AdminData = {
