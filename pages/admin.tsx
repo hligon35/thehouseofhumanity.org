@@ -111,11 +111,14 @@ function Login({ localLoginEnabled, localUsername, googleClientId }: { localLogi
   }, [googleClientId]);
 
   return (
-    <main className="thoh-login-shell">
-      {googleClientId ? (
-        <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" onLoad={initializeGoogleButton} />
-      ) : null}
-      <section className="thoh-login-card">
+    <>
+      <Head>
+        <title>Admin Login | The House of Humanity</title>
+        <link rel="icon" type="image/png" href="/website/images/THOHlogo.png" />
+        <link rel="apple-touch-icon" href="/website/images/THOHlogo.png" />
+      </Head>
+      <main className="thoh-login-shell">
+        <section className="thoh-login-card">
         <Image src="/website/images/THOHlogo.png" alt="The House of Humanity" width={92} height={92} priority />
         <p className="thoh-kicker">Secure administration</p>
         <h1>The House of Humanity</h1>
@@ -132,9 +135,15 @@ function Login({ localLoginEnabled, localUsername, googleClientId }: { localLogi
             <Field label="Password"><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></Field>
             <button className="thoh-button thoh-button--primary" disabled={loading}>{loading ? "Signing in..." : "Sign in locally"}</button>
           </form>
-        ) : null}
-      </section>
-    </main>
+        ) : (
+          <div className="thoh-access-note">
+            <strong>Cloudflare Access is required</strong>
+            <p>Configure an Access application for <code>/admin*</code> and <code>/api/*</code>, with the approved Google or other identity provider.</p>
+          </div>
+        )}
+        </section>
+      </main>
+    </>
   );
 }
 
@@ -285,7 +294,11 @@ export default function AdminPage({ authenticated, principal, data, localLoginEn
 
   return (
     <>
-      <Head><title>Admin Dashboard | The House of Humanity</title></Head>
+      <Head>
+        <title>Admin Dashboard | The House of Humanity</title>
+        <link rel="icon" type="image/png" href="/website/images/THOHlogo.png" />
+        <link rel="apple-touch-icon" href="/website/images/THOHlogo.png" />
+      </Head>
       <div className="thoh-admin-shell">
         <aside className="thoh-sidebar">
           <div className="thoh-sidebar-brand">

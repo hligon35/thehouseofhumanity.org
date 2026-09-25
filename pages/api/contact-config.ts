@@ -10,6 +10,6 @@ export default async function handler(request: NextApiRequest, response: NextApi
   }
   const env = await getRuntimeEnv();
   const enabled = await isTurnstileEnabled();
-  response.setHeader("Cache-Control", "public, max-age=300, s-maxage=300");
+  response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   response.status(200).json({ enabled, siteKey: env.TURNSTILE_SITE_KEY ?? "" });
 }

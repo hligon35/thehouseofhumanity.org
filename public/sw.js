@@ -1,14 +1,13 @@
 // Service Worker for The House of Humanity
 // Provides offline functionality and caching for better performance
 
-const CACHE_NAME = 'thoh-v1.6';
+const CACHE_NAME = 'thoh-v1.7';
 const CORE_ASSETS = [
     '/website/index.html',
     '/website/contact-us.html',
     '/website/styles.css',
     '/website/script.js',
     '/website/site-content.js',
-    '/website/images/THOHlogo-320.webp',
     '/website/images/THOHlogo.png',
     '/website/site.webmanifest',
 ];

@@ -30,11 +30,37 @@ function loadTurnstileScript() {
   window.__thohTurnstilePromise = new Promise(function (resolve, reject) {
     var existing = document.querySelector('script[data-thoh-turnstile]');
     var script = existing || document.createElement("script");
+    var settled = false;
+    var waitForApi = window.setInterval(function () {
+      if (!settled && window.turnstile) {
+        settled = true;
+        window.clearInterval(waitForApi);
+        resolve(window.turnstile);
+      }
+    }, 100);
+    var timeout = window.setTimeout(function () {
+      if (!settled) {
+        settled = true;
+        window.clearInterval(waitForApi);
+        reject(new Error("Security verification is unavailable."));
+      }
+    }, 10000);
     script.addEventListener("load", function () {
-      if (window.turnstile) resolve(window.turnstile);
-      else reject(new Error("Security verification is unavailable."));
+      if (!settled && window.turnstile) {
+        settled = true;
+        window.clearInterval(waitForApi);
+        window.clearTimeout(timeout);
+        resolve(window.turnstile);
+      }
     }, { once: true });
-    script.addEventListener("error", function () { reject(new Error("Security verification is unavailable.")); }, { once: true });
+    script.addEventListener("error", function () {
+      if (!settled) {
+        settled = true;
+        window.clearInterval(waitForApi);
+        window.clearTimeout(timeout);
+        reject(new Error("Security verification is unavailable."));
+      }
+    }, { once: true });
     if (!existing) {
       script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
       script.async = true;
@@ -60,18 +86,26 @@ async function setupTurnstileProtection(form) {
   var container = form.querySelector("[data-turnstile-container]");
   form.dataset.formStartedAt = String(Date.now());
   try {
-    var configResponse = await fetch("/api/contact-config", { headers: { Accept: "application/json" } });
+    var configResponse = await fetch("/api/contact-config?ts=" + Date.now(), {
+      cache: "no-store",
+      headers: { Accept: "application/json" }
+    });
+    if (!configResponse.ok) throw new Error("Security verification could not be configured.");
     var config = await configResponse.json();
     if (!config.enabled) {
       if (button) button.disabled = false;
       return;
     }
     form.dataset.turnstileRequired = "true";
-    if (!container || !config.siteKey) throw new Error("Security verification is not configured.");
+    if (!container || !config.siteKey || config.siteKey.indexOf("replace-with-") === 0) {
+      throw new Error("Security verification is not configured. Please contact the site administrator.");
+    }
     if (button) button.disabled = true;
     var turnstile = await loadTurnstileScript();
     form.__thohTurnstileWidget = turnstile.render(container, {
       sitekey: config.siteKey,
+      appearance: "always",
+      theme: "light",
       callback: function (token) {
         form.dataset.turnstileToken = token;
         if (button) button.disabled = false;

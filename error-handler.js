@@ -31,7 +31,7 @@
     function preloadCriticalResources() {
         const criticalResources = [
             { href: 'styles.css', as: 'style' },
-            { href: 'images/THOHlogo-320.webp', as: 'image' }
+            { href: 'images/THOHlogo.png', as: 'image' }
         ];
         
         criticalResources.forEach(resource => {

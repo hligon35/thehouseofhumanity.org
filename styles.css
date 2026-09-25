@@ -33,6 +33,7 @@
   .logo-img {
     height: 50px;
     width: auto;
+    object-fit: contain;
   }
   .hero {
     padding: 2rem 0.5rem;
@@ -53,6 +54,17 @@
     height: auto;
     border-radius: 8px;
   }
+}
+
+[data-turnstile-container] {
+  min-height: 65px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+[data-turnstile-container] iframe {
+  max-width: 100%;
 }
 /* Event Image Overlay Modal */
 .event-image-modal {
