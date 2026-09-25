@@ -5,7 +5,7 @@ function sanitize(value, maxLength) {
 }
 
 function showFormMessage(form, message, type) {
-  const region = form.querySelector("#formMessage");
+  const region = form.querySelector("[data-form-message], #formMessage");
   if (!region) return;
   region.textContent = message;
   region.dataset.type = type || "info";
@@ -46,7 +46,7 @@ function loadTurnstileScript() {
   return window.__thohTurnstilePromise;
 }
 
-function resetContactTurnstile(form) {
+function resetTurnstile(form) {
   if (window.turnstile && form.__thohTurnstileWidget !== undefined) {
     window.turnstile.reset(form.__thohTurnstileWidget);
   }
@@ -55,7 +55,7 @@ function resetContactTurnstile(form) {
   if (button && form.dataset.turnstileRequired === "true") button.disabled = true;
 }
 
-async function setupContactProtection(form) {
+async function setupTurnstileProtection(form) {
   var button = form.querySelector('button[type="submit"]');
   var container = form.querySelector("[data-turnstile-container]");
   form.dataset.formStartedAt = String(Date.now());
@@ -76,8 +76,8 @@ async function setupContactProtection(form) {
         form.dataset.turnstileToken = token;
         if (button) button.disabled = false;
       },
-      "expired-callback": function () { resetContactTurnstile(form); },
-      "error-callback": function () { resetContactTurnstile(form); }
+      "expired-callback": function () { resetTurnstile(form); },
+      "error-callback": function () { resetTurnstile(form); }
     });
   } catch (error) {
     if (button) button.disabled = true;
@@ -160,11 +160,12 @@ function initNavigation() {
   });
 }
 
-function initContactForms() {
-  document.querySelectorAll("form.contact-form").forEach(function (form) {
+function initPublicForms() {
+  document.querySelectorAll("form[data-turnstile-form]").forEach(function (form) {
+    void setupTurnstileProtection(form);
+    if (!form.matches("form.contact-form")) return;
     const pageUrl = form.querySelector('[name="PageURL"]');
     if (pageUrl) pageUrl.value = window.location.href;
-    void setupContactProtection(form);
     form.addEventListener("submit", async function (event) {
       event.preventDefault();
       const honeypot = form.querySelector('[name="website"]');
@@ -200,7 +201,7 @@ function initContactForms() {
         const result = await response.json().catch(function () { return {}; });
         if (!response.ok) throw new Error(result.error || "Unable to send your message.");
         form.reset();
-        resetContactTurnstile(form);
+        resetTurnstile(form);
         form.dataset.formStartedAt = String(Date.now());
         showFormMessage(form, "Thanks — we received your message and will follow up soon.", "success");
         showNotice("Thanks — we received your message.", "success");
@@ -210,7 +211,7 @@ function initContactForms() {
         showFormMessage(form, messageText, "error");
         showNotice(messageText, "error");
       } finally {
-        if (form.dataset.turnstileRequired === "true") resetContactTurnstile(form);
+        if (form.dataset.turnstileRequired === "true") resetTurnstile(form);
         if (button) { button.disabled = form.dataset.turnstileRequired === "true"; button.textContent = original; }
       }
     });
@@ -229,7 +230,7 @@ function initAnalytics() {
 
 document.addEventListener("DOMContentLoaded", function () {
   initNavigation();
-  initContactForms();
+  initPublicForms();
   initAnalytics();
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(function () {});
 });

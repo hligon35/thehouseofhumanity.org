@@ -1,23 +1,10 @@
 import { createHash } from "node:crypto";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { consumeContactRateLimit, createSubmission, recordActivity, sendContactNotification } from "@/lib/admin-store";
-import { getRuntimeEnv } from "@/lib/runtime-env";
+import { clientIp, isTurnstileEnabled, verifyTurnstileToken } from "@/lib/turnstile";
 
 function clean(value: unknown, max: number) {
   return String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, "").trim().slice(0, max);
-}
-
-function headerValue(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
-}
-
-function clientIp(request: NextApiRequest) {
-  return clean(
-    headerValue(request.headers["cf-connecting-ip"]) ||
-      headerValue(request.headers["x-forwarded-for"]).split(",")[0] ||
-      request.socket.remoteAddress || "unknown",
-    120
-  );
 }
 
 function hashIdentifier(value: string) {
@@ -32,28 +19,6 @@ function isSuspiciousMessage(topic: string, message: string) {
   return /(?:win|winner|won|free|claim|prize|giveaway|contest).{0,90}(?:playstation|xbox|iphone|ipad|lamborghini|ferrari|cash|money|https?:\/\/)/i.test(content);
 }
 
-async function verifyTurnstile(token: string, secret: string, ip: string) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
-  try {
-    const body = new URLSearchParams({ secret, response: token });
-    if (ip && ip !== "unknown") body.set("remoteip", ip);
-    const result = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-      signal: controller.signal
-    });
-    if (!result.ok) return false;
-    const payload = await result.json() as { success?: boolean };
-    return payload.success === true;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 export const config = { api: { bodyParser: { sizeLimit: "20kb" } } };
 
 export default async function handler(request: NextApiRequest, response: NextApiResponse) {
@@ -61,8 +26,7 @@ export default async function handler(request: NextApiRequest, response: NextApi
   const body = request.body && typeof request.body === "object" && !Array.isArray(request.body)
     ? request.body as Record<string, unknown>
     : {};
-  const env = await getRuntimeEnv();
-  const requireTurnstile = env.CONTACT_FORM_REQUIRE_TURNSTILE === "true" || env.NODE_ENV === "production";
+  const requireTurnstile = await isTurnstileEnabled();
   const ip = clientIp(request);
 
   if (clean(body.website, 100)) { response.status(200).json({ ok: true }); return; }
@@ -74,7 +38,7 @@ export default async function handler(request: NextApiRequest, response: NextApi
 
   const turnstileToken = clean(body["cf-turnstile-response"], 4096);
   if (requireTurnstile) {
-    if (!env.TURNSTILE_SECRET_KEY || !turnstileToken || !(await verifyTurnstile(turnstileToken, env.TURNSTILE_SECRET_KEY, ip))) {
+    if (!turnstileToken || !(await verifyTurnstileToken(turnstileToken, request))) {
       response.status(403).json({ error: "Please complete the security check and try again." });
       return;
     }

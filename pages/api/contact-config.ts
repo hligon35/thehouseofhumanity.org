@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getRuntimeEnv } from "@/lib/runtime-env";
+import { isTurnstileEnabled } from "@/lib/turnstile";
 
 export default async function handler(request: NextApiRequest, response: NextApiResponse) {
   if (request.method !== "GET") {
@@ -8,7 +9,7 @@ export default async function handler(request: NextApiRequest, response: NextApi
     return;
   }
   const env = await getRuntimeEnv();
-  const enabled = env.CONTACT_FORM_REQUIRE_TURNSTILE === "true" || env.NODE_ENV === "production";
+  const enabled = await isTurnstileEnabled();
   response.setHeader("Cache-Control", "public, max-age=300, s-maxage=300");
   response.status(200).json({ enabled, siteKey: env.TURNSTILE_SITE_KEY ?? "" });
 }
