@@ -114,12 +114,12 @@ function Login({ localLoginEnabled, localUsername, googleClientId }: { localLogi
     <>
       <Head>
         <title>Admin Login | The House of Humanity</title>
-        <link rel="icon" type="image/png" href="/website/images/THOHlogo.png" />
-        <link rel="apple-touch-icon" href="/website/images/THOHlogo.png" />
+        <link rel="icon" type="image/png" href="/website/images/THOHlogo.png?v=thoh-v1.7" />
+        <link rel="apple-touch-icon" href="/website/images/THOHlogo.png?v=thoh-v1.7" />
       </Head>
       <main className="thoh-login-shell">
         <section className="thoh-login-card">
-        <Image src="/website/images/THOHlogo.png" alt="The House of Humanity" width={92} height={92} priority />
+        <Image src="/website/images/THOHlogo.png?v=thoh-v1.7" alt="The House of Humanity" width={92} height={92} priority />
         <p className="thoh-kicker">Secure administration</p>
         <h1>The House of Humanity</h1>
         <p className="thoh-muted">Sign in with your approved Google account to access the dashboard.</p>
@@ -184,8 +184,14 @@ export default function AdminPage({ authenticated, principal, data, localLoginEn
   }
 
   async function logout() {
-    await requestJson("/api/auth/logout", { method: "POST", body: "{}" });
-    window.location.reload();
+    setBusy("logout");
+    try {
+      await requestJson("/api/auth/logout", { method: "POST", body: "{}" });
+    } finally {
+      // The app cookie is cleared above. This second redirect clears the
+      // Cloudflare Access authorization cookie that authenticates /admin.
+      window.location.assign("/cdn-cgi/access/logout");
+    }
   }
 
   async function updateSubmission(item: ContactSubmission, action: "read" | "archive" | "restore") {
@@ -296,19 +302,21 @@ export default function AdminPage({ authenticated, principal, data, localLoginEn
     <>
       <Head>
         <title>Admin Dashboard | The House of Humanity</title>
-        <link rel="icon" type="image/png" href="/website/images/THOHlogo.png" />
-        <link rel="apple-touch-icon" href="/website/images/THOHlogo.png" />
+        <link rel="icon" type="image/png" href="/website/images/THOHlogo.png?v=thoh-v1.7" />
+        <link rel="apple-touch-icon" href="/website/images/THOHlogo.png?v=thoh-v1.7" />
       </Head>
       <div className="thoh-admin-shell">
         <aside className="thoh-sidebar">
           <div className="thoh-sidebar-brand">
-            <Image src="/website/images/THOHlogo.png" alt="" width={54} height={54} />
+            <Image src="/website/images/THOHlogo.png?v=thoh-v1.7" alt="" width={54} height={54} />
             <div><span>Admin</span><strong>The House of Humanity</strong></div>
           </div>
           <nav className="thoh-nav" aria-label="Admin navigation">
             {nav.map((item) => <button key={item.key} className={activeTab === item.key ? "is-active" : ""} onClick={() => setActiveTab(item.key)}>{item.label}{item.key === "submissions" && newSubmissions ? <b>{newSubmissions}</b> : null}</button>)}
           </nav>
-          <button className="thoh-logout" onClick={() => void logout()}>Sign out</button>
+          <button className="thoh-logout" onClick={() => void logout()} disabled={busy === "logout"} aria-busy={busy === "logout"}>
+            {busy === "logout" ? "Signing out…" : "Sign out"}
+          </button>
         </aside>
 
         <main className="thoh-admin-main">
