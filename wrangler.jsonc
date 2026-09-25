@@ -31,6 +31,7 @@
     "ADMIN_BASE_URL": "https://thehouseofhumanity.org",
     "NEXT_PUBLIC_SITE_URL": "https://thehouseofhumanity.org",
     "ALLOW_LOCAL_ADMIN_LOGIN": "false",
+<<<<<<< HEAD
     "CF_ACCESS_TEAM_DOMAIN": "getsparqd-server.cloudflareaccess.com",
     "CF_ACCESS_AUD": "a9e0f3e69dfc87b96a5b526e50be67584e88ec61176c9f7345de700cba482a04",
     "GOOGLE_CLIENT_ID": "735755043015-8u39d4q9sam2k353kpkfj9ldohmmkdiu.apps.googleusercontent.com",
@@ -48,5 +49,9 @@
       "head_sampling_rate": 1,
       "persist": true
     }
+=======
+    "TURNSTILE_SITE_KEY": "replace-with-cloudflare-turnstile-site-key",
+    "CONTACT_FORM_REQUIRE_TURNSTILE": "true"
+>>>>>>> feat: protect contact form from spam
   }
 }

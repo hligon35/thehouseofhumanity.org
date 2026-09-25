@@ -221,6 +221,42 @@ export async function createSubmission(input: Omit<ContactSubmission, "id" | "st
   return submission;
 }
 
+export async function consumeContactRateLimit(input: {
+  bucketKey: string;
+  maxRequests: number;
+  windowMs: number;
+}) {
+  await ensureSeeded();
+  const database = await getDb();
+  const now = Date.now();
+  const cutoff = now - input.windowMs;
+  const existing = await database.get<{ window_started_at: number; request_count: number }>(
+    "SELECT window_started_at, request_count FROM contact_rate_limits WHERE bucket_key = ?",
+    input.bucketKey
+  );
+
+  if (!existing || existing.window_started_at <= cutoff) {
+    await database.run(
+      "INSERT INTO contact_rate_limits (bucket_key, window_started_at, request_count) VALUES (?, ?, 1) ON CONFLICT(bucket_key) DO UPDATE SET window_started_at = excluded.window_started_at, request_count = excluded.request_count",
+      input.bucketKey, now
+    );
+    return { allowed: true, retryAfterSeconds: 0 };
+  }
+
+  if (existing.request_count >= input.maxRequests) {
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.max(1, Math.ceil((existing.window_started_at + input.windowMs - now) / 1000))
+    };
+  }
+
+  await database.run(
+    "UPDATE contact_rate_limits SET request_count = request_count + 1 WHERE bucket_key = ? AND window_started_at = ?",
+    input.bucketKey, existing.window_started_at
+  );
+  return { allowed: true, retryAfterSeconds: 0 };
+}
+
 export async function updateSubmission(id: string, action: "read" | "archive" | "restore") {
   await ensureSeeded();
   const database = await getDb();

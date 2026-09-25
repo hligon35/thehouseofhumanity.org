@@ -24,6 +24,67 @@ function showNotice(message, type) {
   window.setTimeout(function () { notice.remove(); }, 6000);
 }
 
+function loadTurnstileScript() {
+  if (window.turnstile) return Promise.resolve(window.turnstile);
+  if (window.__thohTurnstilePromise) return window.__thohTurnstilePromise;
+  window.__thohTurnstilePromise = new Promise(function (resolve, reject) {
+    var existing = document.querySelector('script[data-thoh-turnstile]');
+    var script = existing || document.createElement("script");
+    script.addEventListener("load", function () {
+      if (window.turnstile) resolve(window.turnstile);
+      else reject(new Error("Security verification is unavailable."));
+    }, { once: true });
+    script.addEventListener("error", function () { reject(new Error("Security verification is unavailable.")); }, { once: true });
+    if (!existing) {
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.dataset.thohTurnstile = "true";
+      document.head.appendChild(script);
+    }
+  });
+  return window.__thohTurnstilePromise;
+}
+
+function resetContactTurnstile(form) {
+  if (window.turnstile && form.__thohTurnstileWidget !== undefined) {
+    window.turnstile.reset(form.__thohTurnstileWidget);
+  }
+  delete form.dataset.turnstileToken;
+  var button = form.querySelector('button[type="submit"]');
+  if (button && form.dataset.turnstileRequired === "true") button.disabled = true;
+}
+
+async function setupContactProtection(form) {
+  var button = form.querySelector('button[type="submit"]');
+  var container = form.querySelector("[data-turnstile-container]");
+  form.dataset.formStartedAt = String(Date.now());
+  try {
+    var configResponse = await fetch("/api/contact-config", { headers: { Accept: "application/json" } });
+    var config = await configResponse.json();
+    if (!config.enabled) {
+      if (button) button.disabled = false;
+      return;
+    }
+    form.dataset.turnstileRequired = "true";
+    if (!container || !config.siteKey) throw new Error("Security verification is not configured.");
+    if (button) button.disabled = true;
+    var turnstile = await loadTurnstileScript();
+    form.__thohTurnstileWidget = turnstile.render(container, {
+      sitekey: config.siteKey,
+      callback: function (token) {
+        form.dataset.turnstileToken = token;
+        if (button) button.disabled = false;
+      },
+      "expired-callback": function () { resetContactTurnstile(form); },
+      "error-callback": function () { resetContactTurnstile(form); }
+    });
+  } catch (error) {
+    if (button) button.disabled = true;
+    showFormMessage(form, error instanceof Error ? error.message : "Security verification is unavailable.", "error");
+  }
+}
+
 function trackEvent(eventType, metadata) {
   try {
     const visitorKey = "thoh_analytics_visitor";
@@ -103,6 +164,7 @@ function initContactForms() {
   document.querySelectorAll("form.contact-form").forEach(function (form) {
     const pageUrl = form.querySelector('[name="PageURL"]');
     if (pageUrl) pageUrl.value = window.location.href;
+    void setupContactProtection(form);
     form.addEventListener("submit", async function (event) {
       event.preventDefault();
       const honeypot = form.querySelector('[name="website"]');
@@ -112,8 +174,13 @@ function initContactForms() {
       const topic = form.querySelector('[name="Topic"]');
       const message = form.querySelector('[name="Message"]');
       const phone = form.querySelector('[name="Phone"]');
+      const submittedTopic = topic.value;
       if (!name.value.trim() || !/^\S+@\S+\.\S+$/.test(email.value.trim()) || !topic.value) {
         showFormMessage(form, "Please provide your name, a valid email, and a topic.", "error");
+        return;
+      }
+      if (form.dataset.turnstileRequired === "true" && !form.dataset.turnstileToken) {
+        showFormMessage(form, "Please complete the security check and try again.", "error");
         return;
       }
       const button = form.querySelector('button[type="submit"]');
@@ -125,22 +192,26 @@ function initContactForms() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             Name: sanitize(name.value, 120), Email: sanitize(email.value, 254), Phone: sanitize(phone ? phone.value : "", 40),
-            Topic: sanitize(topic.value, 120), Message: sanitize(message ? message.value : "", 4000),
-            PageURL: window.location.href, website: ""
+            Topic: sanitize(submittedTopic, 120), Message: sanitize(message ? message.value : "", 4000),
+            PageURL: window.location.href, website: "", formStartedAt: form.dataset.formStartedAt || "",
+            "cf-turnstile-response": form.dataset.turnstileToken || ""
           })
         });
         const result = await response.json().catch(function () { return {}; });
         if (!response.ok) throw new Error(result.error || "Unable to send your message.");
         form.reset();
+        resetContactTurnstile(form);
+        form.dataset.formStartedAt = String(Date.now());
         showFormMessage(form, "Thanks — we received your message and will follow up soon.", "success");
         showNotice("Thanks — we received your message.", "success");
-        trackEvent("contact_form_submit", { topic: topic.value });
+        trackEvent("contact_form_submit", { topic: submittedTopic });
       } catch (error) {
         const messageText = error instanceof Error ? error.message : "Unable to send your message.";
         showFormMessage(form, messageText, "error");
         showNotice(messageText, "error");
       } finally {
-        if (button) { button.disabled = false; button.textContent = original; }
+        if (form.dataset.turnstileRequired === "true") resetContactTurnstile(form);
+        if (button) { button.disabled = form.dataset.turnstileRequired === "true"; button.textContent = original; }
       }
     });
   });
